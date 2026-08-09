@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+from xrag.models import Post
+from xrag.vector_store import VectorStore
+
+
+class FakeCollection:
+    def __init__(self):
+        self.calls = []
+        self.query_result = {}
+        self.get_result = {"ids": []}
+        self.total = 0
+
+    def delete(self, **kwargs):
+        self.calls.append(("delete", kwargs))
+
+    def upsert(self, **kwargs):
+        self.calls.append(("upsert", kwargs))
+
+    def query(self, **kwargs):
+        self.calls.append(("query", kwargs))
+        return self.query_result
+
+    def get(self, **kwargs):
+        self.calls.append(("get", kwargs))
+        return self.get_result
+
+    def count(self):
+        self.calls.append(("count", {}))
+        return self.total
+
+
+def make_post(text="甲乙丙丁戊己庚辛"):
+    return Post(
+        id="post-1",
+        author="作者",
+        text=text,
+        created_at="2026-01-02T03:04:05Z",
+        url="https://x.com/example/status/1",
+    )
+
+
+def test_index_post_deletes_first_and_upserts_stable_ids_and_metadata(tmp_path):
+    collection = FakeCollection()
+    store = VectorStore(collection, max_chars=5, overlap=1)
+    markdown_path = tmp_path / "post-1.md"
+
+    assert store.index_post(make_post(), markdown_path) == 2
+
+    assert collection.calls[0] == ("delete", {"where": {"post_id": "post-1"}})
+    operation, payload = collection.calls[1]
+    assert operation == "upsert"
+    assert payload["ids"] == ["post-1:0", "post-1:1"]
+    assert payload["documents"] == ["甲乙丙丁戊", "戊己庚辛"]
+    assert payload["metadatas"] == [
+        {
+            "post_id": "post-1",
+            "author": "作者",
+            "created_at": "2026-01-02T03:04:05Z",
+            "url": "https://x.com/example/status/1",
+            "markdown_path": str(markdown_path),
+        },
+        {
+            "post_id": "post-1",
+            "author": "作者",
+            "created_at": "2026-01-02T03:04:05Z",
+            "url": "https://x.com/example/status/1",
+            "markdown_path": str(markdown_path),
+        },
+    ]
+
+
+def test_index_empty_post_only_removes_existing_chunks(tmp_path):
+    collection = FakeCollection()
+    store = VectorStore(collection)
+
+    assert store.index_post(make_post(" \n\n "), tmp_path / "post.md") == 0
+    assert collection.calls == [("delete", {"where": {"post_id": "post-1"}})]
+
+
+def test_search_maps_first_result_set_and_clips_similarity():
+    collection = FakeCollection()
+    collection.query_result = {
+        "ids": [["p1:0", "p2:0", "p3:0"]],
+        "documents": [["一", "二", "三"]],
+        "metadatas": [[
+            {"post_id": "p1", "author": "甲", "created_at": "t1", "url": "u1", "markdown_path": "a.md"},
+            {"post_id": "p2", "author": "乙", "created_at": "t2", "url": "u2", "markdown_path": "b.md"},
+            {"post_id": "p3", "author": "丙", "created_at": "t3", "url": "u3", "markdown_path": "c.md"},
+        ]],
+        "distances": [[0.12344, -0.5, 2.0]],
+    }
+    store = VectorStore(collection)
+
+    hits = store.search("查询", 3)
+
+    assert collection.calls == [("query", {"query_texts": ["查询"], "n_results": 3})]
+    assert [(hit.post_id, hit.text, hit.score) for hit in hits] == [
+        ("p1", "一", 0.8766),
+        ("p2", "二", 1.0),
+        ("p3", "三", 0.0),
+    ]
+    assert hits[0].author == "甲"
+    assert hits[0].markdown_path == "a.md"
+
+
+@pytest.mark.parametrize("result", [{}, {"ids": []}, {"ids": [[]]}])
+def test_search_handles_missing_or_empty_results(result):
+    collection = FakeCollection()
+    collection.query_result = result
+    assert VectorStore(collection).search("查询", 2) == []
+
+
+@pytest.mark.parametrize(("query", "top"), [("", 1), ("   ", 1), ("ok", 0), ("ok", -1)])
+def test_search_validates_inputs(query, top):
+    with pytest.raises(ValueError):
+        VectorStore(FakeCollection()).search(query, top)
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"ids": [["p:0"]], "documents": [[]], "metadatas": [[{}]], "distances": [[0.1]]},
+        {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [], "distances": [[0.1]]},
+        {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [[{}]], "distances": [["bad"]]},
+    ],
+)
+def test_search_rejects_malformed_result_shapes(result):
+    collection = FakeCollection()
+    collection.query_result = result
+    with pytest.raises(ValueError, match="Malformed Chroma query result"):
+        VectorStore(collection).search("查询", 1)
+
+
+def test_count_delegates_to_collection():
+    collection = FakeCollection()
+    collection.total = 7
+    assert VectorStore(collection).count() == 7
+
+
+def test_clear_noops_when_collection_is_empty():
+    collection = FakeCollection()
+    VectorStore(collection).clear()
+    assert collection.calls == [("get", {"include": []})]
+
+
+def test_clear_deletes_all_returned_ids():
+    collection = FakeCollection()
+    collection.get_result = {"ids": ["p1:0", "p2:0"]}
+    VectorStore(collection).clear()
+    assert collection.calls == [
+        ("get", {"include": []}),
+        ("delete", {"ids": ["p1:0", "p2:0"]}),
+    ]
+
+
+def test_persistent_builds_cpu_cosine_collection_without_real_dependencies(tmp_path, monkeypatch):
+    created = {}
+
+    class FakeEmbeddingFunction:
+        def __init__(self, **kwargs):
+            created["embedding"] = kwargs
+            created["embedding_instance"] = self
+
+    class FakeClient:
+        def __init__(self, path):
+            created["client_path"] = path
+
+        def get_or_create_collection(self, **kwargs):
+            created["collection"] = kwargs
+            return "collection"
+
+    chromadb = types.ModuleType("chromadb")
+    chromadb.PersistentClient = FakeClient
+    embedding_functions = types.ModuleType("chromadb.utils.embedding_functions")
+    embedding_functions.SentenceTransformerEmbeddingFunction = FakeEmbeddingFunction
+    monkeypatch.setitem(sys.modules, "chromadb", chromadb)
+    monkeypatch.setitem(sys.modules, "chromadb.utils.embedding_functions", embedding_functions)
+
+    store = VectorStore.persistent(tmp_path / "db", "模型")
+
+    assert (tmp_path / "db").is_dir()
+    assert created["client_path"] == str(tmp_path / "db")
+    assert created["embedding"] == {
+        "model_name": "模型",
+        "device": "cpu",
+        "normalize_embeddings": True,
+    }
+    assert created["collection"] == {
+        "name": "x_posts",
+        "embedding_function": created["embedding_instance"],
+        "metadata": {"hnsw:space": "cosine"},
+    }
+
+
+def test_persistent_wraps_dependency_failure(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "chromadb", None)
+    with pytest.raises(RuntimeError, match="initialize persistent Chroma vector store"):
+        VectorStore.persistent(tmp_path / "db", "model")
