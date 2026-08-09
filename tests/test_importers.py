@@ -125,6 +125,17 @@ def test_markdown_uses_a_safe_stem_only_when_id_is_missing(tmp_path: Path) -> No
         load_posts(unsafe)
 
 
+@pytest.mark.parametrize("post_id", ["null", "''", "'   '"])
+def test_markdown_does_not_use_stem_when_invalid_id_is_explicit(
+    tmp_path: Path, post_id: str
+) -> None:
+    path = tmp_path / "safe-stem.md"
+    path.write_text(f"---\nid: {post_id}\n---\nbody\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="id"):
+        load_posts(path)
+
+
 @pytest.mark.parametrize(
     "content, match",
     [
