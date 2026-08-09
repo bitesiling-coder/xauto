@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -68,19 +69,25 @@ class VectorStore:
             raise ValueError("top must be greater than zero")
 
         result = self.collection.query(query_texts=[query], n_results=top)
-        ids = result.get("ids") if isinstance(result, dict) else None
-        if not ids or not ids[0]:
-            return []
-
         try:
-            first_ids = ids[0]
-            documents = result["documents"][0]
-            metadatas = result["metadatas"][0]
-            distances = result["distances"][0]
-            if not all(isinstance(items, list) for items in (first_ids, documents, metadatas, distances)):
-                raise TypeError("result sets must be lists")
+            if not isinstance(result, Mapping):
+                raise TypeError("result must be a mapping")
+
+            result_sets = []
+            for key in ("ids", "documents", "metadatas", "distances"):
+                outer = result[key]
+                if not _is_sequence(outer) or not outer:
+                    raise TypeError(f"{key} must be a non-empty outer sequence")
+                inner = outer[0]
+                if not _is_sequence(inner):
+                    raise TypeError(f"{key}[0] must be a sequence")
+                result_sets.append(inner)
+
+            first_ids, documents, metadatas, distances = result_sets
             if not (len(first_ids) == len(documents) == len(metadatas) == len(distances)):
                 raise ValueError("result set lengths differ")
+            if not first_ids:
+                return []
 
             hits = []
             for document, metadata, distance in zip(documents, metadatas, distances):
@@ -106,10 +113,11 @@ class VectorStore:
         return self.collection.count()
 
     def clear(self) -> None:
-        try:
-            result = self.collection.get(include=[])
-        except TypeError:
-            result = self.collection.get()
+        result = self.collection.get(include=[])
         ids = result.get("ids", []) if isinstance(result, dict) else []
         if ids:
             self.collection.delete(ids=ids)
+
+
+def _is_sequence(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))

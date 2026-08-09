@@ -110,10 +110,14 @@ def test_search_maps_first_result_set_and_clips_similarity():
     assert hits[0].markdown_path == "a.md"
 
 
-@pytest.mark.parametrize("result", [{}, {"ids": []}, {"ids": [[]]}])
-def test_search_handles_missing_or_empty_results(result):
+def test_search_handles_empty_result():
     collection = FakeCollection()
-    collection.query_result = result
+    collection.query_result = {
+        "ids": [[]],
+        "documents": [[]],
+        "metadatas": [[]],
+        "distances": [[]],
+    }
     assert VectorStore(collection).search("查询", 2) == []
 
 
@@ -126,6 +130,12 @@ def test_search_validates_inputs(query, top):
 @pytest.mark.parametrize(
     "result",
     [
+        None,
+        {},
+        {"ids": 1, "documents": [[]], "metadatas": [[]], "distances": [[]]},
+        {"ids": {"bad": []}, "documents": [[]], "metadatas": [[]], "distances": [[]]},
+        {"ids": [], "documents": [], "metadatas": [], "distances": []},
+        {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [[{}]]},
         {"ids": [["p:0"]], "documents": [[]], "metadatas": [[{}]], "distances": [[0.1]]},
         {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [], "distances": [[0.1]]},
         {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [[{}]], "distances": [["bad"]]},
@@ -158,6 +168,18 @@ def test_clear_deletes_all_returned_ids():
         ("get", {"include": []}),
         ("delete", {"ids": ["p1:0", "p2:0"]}),
     ]
+
+
+def test_clear_does_not_retry_without_ids_only_include_when_get_raises():
+    class BrokenGetCollection(FakeCollection):
+        def get(self, **kwargs):
+            self.calls.append(("get", kwargs))
+            raise TypeError("internal collection failure")
+
+    collection = BrokenGetCollection()
+    with pytest.raises(TypeError, match="internal collection failure"):
+        VectorStore(collection).clear()
+    assert collection.calls == [("get", {"include": []})]
 
 
 def test_persistent_builds_cpu_cosine_collection_without_real_dependencies(tmp_path, monkeypatch):
@@ -203,3 +225,23 @@ def test_persistent_wraps_dependency_failure(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "chromadb", None)
     with pytest.raises(RuntimeError, match="initialize persistent Chroma vector store"):
         VectorStore.persistent(tmp_path / "db", "model")
+
+
+def test_persistent_wraps_and_chains_initialization_failure(tmp_path, monkeypatch):
+    cause = OSError("model unavailable")
+
+    class BrokenEmbeddingFunction:
+        def __init__(self, **kwargs):
+            raise cause
+
+    chromadb = types.ModuleType("chromadb")
+    embedding_functions = types.ModuleType("chromadb.utils.embedding_functions")
+    embedding_functions.SentenceTransformerEmbeddingFunction = BrokenEmbeddingFunction
+    monkeypatch.setitem(sys.modules, "chromadb", chromadb)
+    monkeypatch.setitem(sys.modules, "chromadb.utils.embedding_functions", embedding_functions)
+
+    with pytest.raises(
+        RuntimeError, match="initialize persistent Chroma vector store"
+    ) as exc_info:
+        VectorStore.persistent(tmp_path / "db", "broken-model")
+    assert exc_info.value.__cause__ is cause
