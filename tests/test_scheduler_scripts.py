@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
@@ -50,10 +51,13 @@ def test_daily_runner_derives_root_and_appends_exact_collect_command() -> None:
     assert 'dirname -- "${BASH_SOURCE[0]}"' in script
     assert 'PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"' in script
     assert 'mkdir -p -- "$PROJECT_ROOT/logs"' in script
-    assert (
-        'exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" collect --all '
-        '>> "$PROJECT_ROOT/logs/scheduler.log" 2>&1'
-    ) in script
+    assert 'exec >> "$PROJECT_ROOT/logs/scheduler.log" 2>&1' in script
+    assert 'export PATH="$HOME/.local/bin:$PATH"' in script
+    assert "export HF_HUB_OFFLINE=1" in script
+    assert "export TRANSFORMERS_OFFLINE=1" in script
+    assert "command -v opencli" in script
+    assert "scheduled collection start" in script
+    assert 'exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" collect --all' in script
 
 
 def test_installer_has_idempotent_daily_current_user_defaults() -> None:
@@ -246,51 +250,132 @@ def test_daily_runner_is_kept_with_lf_line_endings_by_git() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
+    if result.returncode != 0 and os.name != "nt":
+        pytest.skip("Windows-linked worktree metadata is not readable by WSL git")
 
+    assert result.returncode == 0, result.stderr
     assert result.stdout.strip().endswith("eol: lf")
 
 
-def test_daily_runner_forwards_exact_args_appends_log_and_propagates_status(tmp_path: Path) -> None:
-    if shutil.which("wsl.exe") is None:
-        pytest.skip("WSL is not installed")
-
-    project = tmp_path / "project with spaces"
-    scripts = project / "scripts"
-    fake_bin = project / ".venv" / "bin"
-    scripts.mkdir(parents=True)
-    fake_bin.mkdir(parents=True)
-    (scripts / "run-daily.sh").write_bytes(RUNNER.read_bytes())
-    (fake_bin / "xrag").write_text(
-        "#!/usr/bin/env bash\nprintf '<%s>\\n' \"$@\"\nexit \"${FAKE_STATUS:-0}\"\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+def translate_with_wsl(path: Path) -> str:
+    if os.name != "nt":
+        return str(path)
 
     translated = subprocess.run(
-        ["wsl.exe", "-d", "Ubuntu", "-e", "wslpath", "-a", str(scripts / "run-daily.sh")],
+        ["wsl.exe", "-d", "Ubuntu", "-e", "wslpath", "-a", str(path)],
         capture_output=True,
         check=False,
     )
     if translated.returncode != 0:
         pytest.skip(f"Ubuntu WSL probe unavailable: {translated.stderr!r}")
-    wsl_runner = translated.stdout.decode("utf-8").strip()
+    return translated.stdout.decode("utf-8").strip()
 
-    first = subprocess.run(
-        ["wsl.exe", "-d", "Ubuntu", "-e", "bash", wsl_runner],
+
+def prepare_wsl_runner(tmp_path: Path, *, with_opencli: bool) -> tuple[Path, str, str]:
+    if os.name == "nt" and shutil.which("wsl.exe") is None:
+        pytest.skip("WSL is not installed")
+
+    project = tmp_path / "project with spaces"
+    scripts = project / "scripts"
+    fake_bin = project / ".venv" / "bin"
+    fake_home = project / "fake home"
+    local_bin = fake_home / ".local" / "bin"
+    scripts.mkdir(parents=True)
+    fake_bin.mkdir(parents=True)
+    local_bin.mkdir(parents=True)
+    (scripts / "run-daily.sh").write_bytes(RUNNER.read_bytes())
+    fake_xrag = fake_bin / "xrag"
+    fake_xrag.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'ARG=<%s>\\n' \"$@\"\n"
+        "printf 'OPENCLI=<%s>\\n' \"$(command -v opencli)\"\n"
+        "printf 'HF_HUB_OFFLINE=<%s>\\n' \"${HF_HUB_OFFLINE-}\"\n"
+        "printf 'TRANSFORMERS_OFFLINE=<%s>\\n' \"${TRANSFORMERS_OFFLINE-}\"\n"
+        "printf 'XRAG_RAN\\n'\n"
+        "exit \"${FAKE_STATUS:-0}\"\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    fake_xrag.chmod(0o755)
+    if with_opencli:
+        fake_opencli = local_bin / "opencli"
+        fake_opencli.write_text(
+            "#!/usr/bin/env bash\nexit 0\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        fake_opencli.chmod(0o755)
+
+    return project, translate_with_wsl(scripts / "run-daily.sh"), translate_with_wsl(fake_home)
+
+
+def run_daily_in_minimal_environment(wsl_runner: str, wsl_home: str, status: int = 0) -> subprocess.CompletedProcess[bytes]:
+    if os.name != "nt":
+        return subprocess.run(
+            ["env", "-i", f"HOME={wsl_home}", "PATH=/usr/bin:/bin", f"FAKE_STATUS={status}", "bash", wsl_runner],
+            capture_output=True,
+            check=False,
+        )
+
+    return subprocess.run(
+        [
+            "wsl.exe",
+            "-d",
+            "Ubuntu",
+            "-e",
+            "env",
+            "-i",
+            f"HOME={wsl_home}",
+            "PATH=/usr/bin:/bin",
+            f"FAKE_STATUS={status}",
+            "bash",
+            wsl_runner,
+        ],
         capture_output=True,
         check=False,
     )
-    second = subprocess.run(
-        ["wsl.exe", "-d", "Ubuntu", "-e", "env", "FAKE_STATUS=23", "bash", wsl_runner],
-        capture_output=True,
-        check=False,
-    )
 
-    assert first.returncode == 0, first.stderr.decode("utf-8", errors="replace")
-    assert second.returncode == 23, second.stderr.decode("utf-8", errors="replace")
-    log_lines = (project / "logs" / "scheduler.log").read_text(encoding="utf-8").splitlines()
+
+def test_daily_runner_finds_opencli_and_sets_offline_environment(tmp_path: Path) -> None:
+    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=True)
+
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home)
+
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
     wsl_project = str(PurePosixPath(wsl_runner).parents[1])
-    expected_once = ["<--root>", f"<{wsl_project}>", "<collect>", "<--all>"]
-    assert log_lines == expected_once + expected_once
+    assert "scheduled collection start" in log
+    assert [line for line in log.splitlines() if line.startswith("ARG=")] == [
+        "ARG=<--root>",
+        f"ARG=<{wsl_project}>",
+        "ARG=<collect>",
+        "ARG=<--all>",
+    ]
+    assert f"OPENCLI=<{wsl_home}/.local/bin/opencli>" in log
+    assert "HF_HUB_OFFLINE=<1>" in log
+    assert "TRANSFORMERS_OFFLINE=<1>" in log
+
+
+def test_daily_runner_exits_127_before_xrag_when_opencli_is_absent(tmp_path: Path) -> None:
+    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=False)
+
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home)
+
+    assert result.returncode == 127, result.stderr.decode("utf-8", errors="replace")
+    log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
+    assert "scheduled collection start" in log
+    assert "opencli" in log.lower()
+    assert "not found" in log.lower()
+    assert "XRAG_RAN" not in log
+
+
+def test_daily_runner_propagates_xrag_nonzero_status(tmp_path: Path) -> None:
+    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=True)
+
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home, status=23)
+
+    assert result.returncode == 23, result.stderr.decode("utf-8", errors="replace")
+    log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
+    assert "XRAG_RAN" in log
