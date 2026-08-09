@@ -251,6 +251,17 @@ def test_load_posts_wraps_recursion_errors_from_deep_yaml(tmp_path: Path) -> Non
     assert isinstance(error.value.__cause__, RecursionError)
 
 
+def test_load_posts_wraps_recursion_errors_from_deep_json(tmp_path: Path) -> None:
+    depth = 100_000
+    path = tmp_path / "deep.json"
+    path.write_text("[" * depth + '"value"' + "]" * depth, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot load JSON file.*deep.json") as error:
+        load_posts(path)
+
+    assert isinstance(error.value.__cause__, RecursionError)
+
+
 def test_load_posts_wraps_recursion_errors_from_deep_markdown_front_matter(tmp_path: Path) -> None:
     depth = sys.getrecursionlimit() + 100
     path = tmp_path / "deep.md"
