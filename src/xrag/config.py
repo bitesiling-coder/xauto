@@ -59,11 +59,15 @@ def load_config(root: Path) -> AppConfig:
     keywords = _keywords(raw_config.get("keywords"))
     return AppConfig(
         root=resolved_root,
-        schedule_enabled=bool(schedule.get("enabled")),
+        schedule_enabled=_boolean(schedule, "enabled", "schedule.enabled"),
         schedule_time=schedule_time,
         timezone=_string(schedule, "timezone"),
-        limit_per_keyword=int(collection["limit_per_keyword"]),
-        delay_seconds=int(collection["delay_seconds"]),
+        limit_per_keyword=_positive_int(
+            collection, "limit_per_keyword", "collection.limit_per_keyword"
+        ),
+        delay_seconds=_non_negative_int(
+            collection, "delay_seconds", "collection.delay_seconds"
+        ),
         keywords=keywords,
         embedding_model=_string(embedding, "model"),
     )
@@ -80,6 +84,29 @@ def _string(config: dict[object, object], name: str) -> str:
     value = config.get(name)
     if not isinstance(value, str):
         raise ValueError(f"Configuration value {name!r} must be a string")
+    return value
+
+
+def _boolean(config: dict[object, object], name: str, field: str) -> bool:
+    value = config.get(name)
+    if type(value) is not bool:
+        raise ValueError(f"Configuration value {field!r} must be a boolean")
+    return value
+
+
+def _positive_int(config: dict[object, object], name: str, field: str) -> int:
+    value = config.get(name)
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"Configuration value {field!r} must be a positive integer")
+    return value
+
+
+def _non_negative_int(config: dict[object, object], name: str, field: str) -> int:
+    value = config.get(name)
+    if type(value) is not int or value < 0:
+        raise ValueError(
+            f"Configuration value {field!r} must be a non-negative integer"
+        )
     return value
 
 
