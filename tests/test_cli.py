@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -107,6 +109,18 @@ def test_collect_rejects_nonpositive_limit(monkeypatch) -> None:
 
     assert result.exit_code == 2
     assert "1" in result.output
+
+
+def test_collect_all_rejects_limit_without_initialization(monkeypatch) -> None:
+    calls: list[Path] = []
+    monkeypatch.setattr(cli, "build_service", lambda root: calls.append(root))
+
+    result = runner.invoke(cli.app, ["collect", "--all", "--limit", "5"])
+
+    assert result.exit_code == 2
+    assert "--limit" in result.stderr
+    assert "--all" in result.stderr
+    assert calls == []
 
 
 def test_search_formats_hits(monkeypatch) -> None:
@@ -232,6 +246,40 @@ def test_operational_error_redacts_credential_variants(
     assert "Traceback" not in result.output
 
 
+@pytest.mark.parametrize(
+    ("authorization", "payload_fragments"),
+    [
+        (
+            'OAuth realm="Example", oauth_consumer_key="consumer", '
+            'oauth_token="token", oauth_signature="signature"',
+            ("Example", "consumer", "token", "signature"),
+        ),
+        (
+            "AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE, SignedHeaders=host, "
+            "Signature=aws-signature",
+            ("AKIAEXAMPLE", "SignedHeaders", "aws-signature"),
+        ),
+    ],
+)
+def test_authorization_redaction_removes_complete_field_line(
+    monkeypatch, authorization: str, payload_fragments: tuple[str, ...]
+) -> None:
+    message = f"browser failed\nAuthorization: {authorization}\nretry later"
+    monkeypatch.setattr(
+        cli,
+        "build_service",
+        lambda root: (_ for _ in ()).throw(OpenCLIError(message)),
+    )
+
+    result = runner.invoke(cli.app, ["status"])
+
+    assert result.exit_code == 2
+    assert "authorization=[REDACTED]" in result.stderr
+    assert "retry later" in result.stderr
+    assert all(fragment not in result.stderr for fragment in payload_fragments)
+    assert "Traceback" not in result.output
+
+
 @pytest.mark.parametrize("error_type", [ValueError, RuntimeError, OSError])
 @pytest.mark.parametrize("failure_point", ["build", "service"])
 def test_known_operational_exceptions_exit_cleanly(
@@ -288,6 +336,26 @@ def test_no_arguments_show_help_without_building_service(monkeypatch) -> None:
     assert "Usage:" in result.stdout
     assert "collect" in result.stdout
     assert roots == []
+    assert result.exit_code == 2
+
+
+def test_utf8_stream_configuration_handles_cp936_redirects(monkeypatch) -> None:
+    stdout_bytes = io.BytesIO()
+    stderr_bytes = io.BytesIO()
+    stdout = io.TextIOWrapper(stdout_bytes, encoding="cp936", errors="strict")
+    stderr = io.TextIOWrapper(stderr_bytes, encoding="cp936", errors="strict")
+    monkeypatch.setattr(cli, "sys", SimpleNamespace(stdout=stdout, stderr=stderr))
+
+    cli._configure_utf8_streams()
+    stdout.write("中文😀")
+    stderr.write("错误🚫")
+    stdout.flush()
+    stderr.flush()
+
+    assert stdout.encoding.lower().replace("-", "") == "utf8"
+    assert stderr.encoding.lower().replace("-", "") == "utf8"
+    assert stdout_bytes.getvalue().decode("utf-8") == "中文😀"
+    assert stderr_bytes.getvalue().decode("utf-8") == "错误🚫"
 
 
 def test_module_entrypoint_help_does_not_initialize_model(tmp_path: Path) -> None:
@@ -329,6 +397,31 @@ def test_installed_console_entrypoint_help_does_not_initialize_model(tmp_path: P
     assert result.returncode == 0
     assert "collect" in result.stdout
     assert "Failed to initialize" not in result.stderr
+
+
+def test_installed_console_reports_malformed_yaml_without_traceback(tmp_path: Path) -> None:
+    executable_name = "xrag.exe" if os.name == "nt" else "xrag"
+    executable = Path(sys.executable).with_name(executable_name)
+    assert executable.is_file(), f"editable console script is not installed: {executable}"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "keywords.yaml").write_text(
+        "keywords: [unterminated", encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [str(executable), "--root", str(tmp_path), "status"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Error:" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_console_entrypoint_targets_typer_app() -> None:

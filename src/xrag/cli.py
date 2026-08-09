@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import sys
 from typing import Annotated, Any, Callable, TypeVar
 
 import typer
+import yaml
 
 from .config import load_config
 from .markdown_store import MarkdownStore
@@ -26,8 +28,7 @@ _SECRET = re.compile(
 _AUTHORIZATION = re.compile(
     r'''(?ix)
     ["']?\b(?:(?:twitter|x)[_-])?authorization\b["']?\s*[:=]\s*
-    (?:"[^"]*"|'[^']*'|(?:Basic|Bearer|Token)\s+[^\s,;}]+|
-       Digest\b[^\r\n;]*|[^\r\n,;]*)
+    [^\r\n]*
     '''
 )
 _BEARER = re.compile(r"(?i)\bBearer\s+[^\s,;}\]]+")
@@ -41,6 +42,7 @@ def main(
         typer.Option("--root", help="Project root containing config/keywords.yaml."),
     ] = Path("."),
 ) -> None:
+    _configure_utf8_streams()
     ctx.obj = root.resolve()
 
 
@@ -58,7 +60,7 @@ def _service(ctx: typer.Context) -> XragService:
 def _run(operation: Callable[[], T]) -> T:
     try:
         return operation()
-    except (OpenCLIError, ValueError, RuntimeError, OSError) as error:
+    except (OpenCLIError, yaml.YAMLError, ValueError, RuntimeError, OSError) as error:
         typer.echo(f"Error: {_redact(str(error))}", err=True)
         raise typer.Exit(code=2) from None
 
@@ -67,6 +69,17 @@ def _redact(message: str) -> str:
     message = _AUTHORIZATION.sub("authorization=[REDACTED]", message)
     message = _BEARER.sub("Bearer [REDACTED]", message)
     return _SECRET.sub(lambda match: f"{match.group(1)}=[REDACTED]", message)
+
+
+def _configure_utf8_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
 
 
 def _summary(keyword: str, counts: dict[str, int]) -> str:
@@ -91,6 +104,9 @@ def collect(
 ) -> None:
     if (keyword is None) == (not all_keywords):
         typer.echo("Error: exactly one of KEYWORD or --all is required.", err=True)
+        raise typer.Exit(code=2)
+    if all_keywords and limit is not None:
+        typer.echo("Error: --limit cannot be used with --all.", err=True)
         raise typer.Exit(code=2)
     if all_keywords:
         results = _run(lambda: _service(ctx).collect_all())
@@ -146,4 +162,5 @@ def _print_json(value: Any) -> None:
 
 
 if __name__ == "__main__":
+    _configure_utf8_streams()
     app()
