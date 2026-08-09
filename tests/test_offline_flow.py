@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+import os
 import sys
+import warnings
 from pathlib import Path
+
+os.environ.setdefault("RAYON_NUM_THREADS", "1")
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    import chromadb
+    from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+    from chromadb.config import Settings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.config import AppConfig
 from xrag.markdown_store import MarkdownStore
-from xrag.models import Post
 from xrag.opencli import parse_search_yaml
 from xrag.service import XragService
+from xrag.vector_store import VectorStore
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "opencli-search.yaml"
@@ -17,17 +27,23 @@ POST_ID = "2084640002085130466"
 POST_URL = "https://x.com/0xQiYan/status/2084640002085130466"
 
 
-class OfflineVectors:
+class DeterministicEmbeddingFunction(EmbeddingFunction[Documents]):
     def __init__(self) -> None:
-        self.cleared = 0
-        self.indexed: list[tuple[Post, Path]] = []
+        pass
 
-    def clear(self) -> None:
-        self.cleared += 1
+    @staticmethod
+    def name() -> str:
+        return "xrag-offline-test"
 
-    def index_post(self, post: Post, path: Path) -> int:
-        self.indexed.append((post, path))
-        return 1
+    def get_config(self) -> dict[str, object]:
+        return {}
+
+    @staticmethod
+    def build_from_config(config: dict[str, object]) -> "DeterministicEmbeddingFunction":
+        return DeterministicEmbeddingFunction()
+
+    def __call__(self, input: Documents) -> Embeddings:
+        return [[1.0, 0.0, 0.0] for _ in input]
 
 
 def test_fixture_round_trips_to_canonical_markdown_and_rebuilds_offline(tmp_path: Path) -> None:
@@ -78,9 +94,46 @@ def test_fixture_round_trips_to_canonical_markdown_and_rebuilds_offline(tmp_path
         keywords=("DDR5",),
         embedding_model="offline-test-model",
     )
-    vectors = OfflineVectors()
+    chroma = chromadb.EphemeralClient(
+        settings=Settings(anonymized_telemetry=False, is_persistent=False)
+    )
+    collection = chroma.create_collection(
+        "xrag-offline-flow",
+        embedding_function=DeterministicEmbeddingFunction(),
+        metadata={"hnsw:space": "cosine"},
+    )
+    vectors = VectorStore(collection)
     service = XragService(config, opencli=None, markdown=markdown, vectors=vectors)
 
     assert service.rebuild() == {"documents": 1, "chunks": 1, "errors": 0}
-    assert vectors.cleared == 1
-    assert vectors.indexed == [(post, canonical_path)]
+    assert vectors.count() == 1
+    [hit] = service.search("DDR5", top=1)
+    assert hit.post_id == POST_ID
+    assert hit.url == POST_URL
+    assert hit.markdown_path == str(canonical_path)
+
+
+def test_opencli_secrets_are_not_persisted_to_markdown(tmp_path: Path) -> None:
+    payload = """
+- id: secret-proof
+  author: example
+  text: safe public post
+  url: https://x.com/example/status/secret-proof
+  auth_token: AUTH_VALUE_MUST_NOT_PERSIST
+  ct0: CT0_VALUE_MUST_NOT_PERSIST
+  api_key: API_VALUE_MUST_NOT_PERSIST
+"""
+    [post] = parse_search_yaml(payload, "security")
+    markdown = MarkdownStore(tmp_path / "markdown", clock=lambda: "2026-08-09T12:00:00Z")
+
+    canonical = markdown.upsert(post).read_text(encoding="utf-8")
+
+    for forbidden in (
+        "auth_token",
+        "ct0",
+        "api_key",
+        "AUTH_VALUE_MUST_NOT_PERSIST",
+        "CT0_VALUE_MUST_NOT_PERSIST",
+        "API_VALUE_MUST_NOT_PERSIST",
+    ):
+        assert forbidden.casefold() not in canonical.casefold()

@@ -6,7 +6,8 @@ X-RAG 是一个仅检索的本地 RAG 工具：它通过 OpenCLI 收集 X 帖子
 
 - Windows 上的 WSL Ubuntu，以及 WSL 内的 Python 3.11 或更高版本。
 - WSL 内已安装 OpenCLI，`opencli doctor` 显示浏览器桥接和 Twitter/X 扩展已连接。
-- 首次使用 embedding 模型时需要网络和足够磁盘空间；模型缓存完成后可本地检索。
+- Ubuntu 如果提示无法创建 venv，先执行 `sudo apt update && sudo apt install -y python3-venv`。
+- 安装依赖会下载较大的 PyTorch/模型运行栈，首次功能性 `xrag` 命令还需下载 embedding 模型；请预留时间、网络和足够磁盘空间。模型缓存完成后可本地检索。
 
 ## 快速开始
 
@@ -107,7 +108,7 @@ source_keywords: [DDR5]
 DDR5 现货市场观察。
 ```
 
-ID 只能匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`：首字符必须是 ASCII 字母或数字，其余只允许字母、数字、下划线和连字号。同一批数据中不允许忽略大小写后重复的 ID，权威目录也会拒绝大小写冲突。Markdown 可在缺少 `id` 时使用符合该规则的文件名作为 ID。
+ID 只能匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`，其中所有字符都必须是 ASCII：首字符必须是 ASCII 字母或数字，其余只允许 ASCII 字母、数字、下划线和连字号。同一批数据中不允许忽略大小写后重复的 ID，权威目录也会拒绝大小写冲突。Markdown 可在缺少 `id` 时使用符合该规则的文件名作为 ID。
 
 ## Windows 每日计划任务
 
@@ -115,13 +116,13 @@ ID 只能匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`：首字符必须是 ASCII 字母或
 
 ```powershell
 Set-Location 'C:\Users\1\Documents\X工作流'
-.\scripts\install-schedule.ps1 -Distribution Ubuntu -ScheduleTime "10:00" -DryRun
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-schedule.ps1 -Distribution Ubuntu -ScheduleTime "10:00" -DryRun
 ```
 
 安装或更新名为 `X-RAG Daily Collection` 的任务（脚本使用 `-Force`）：
 
 ```powershell
-.\scripts\install-schedule.ps1 -Distribution Ubuntu -ScheduleTime "10:00"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-schedule.ps1 -Distribution Ubuntu -ScheduleTime "10:00"
 ```
 
 检查任务定义和最近运行信息：
@@ -131,11 +132,22 @@ Get-ScheduledTask -TaskName 'X-RAG Daily Collection' | Format-List TaskName,Stat
 Get-ScheduledTaskInfo -TaskName 'X-RAG Daily Collection'
 ```
 
-任务会调用 WSL 内的 `scripts/run-daily.sh`，该脚本运行项目自带的 `.venv/bin/xrag --root <项目根> collect --all`。`config/keywords.yaml` 中的 `schedule.enabled` 不会自动创建或删除 Windows 任务；计划任务由上述 PowerShell 脚本管理。
+安装器将登录类型设为 `Interactive`，因此只有当该 Windows 用户已登录，且 OpenCLI 浏览器桥接可用时，收集任务才能正常运行。触发时间始终是 Windows 本地时间，不会根据 `schedule.timezone` 换算。
+
+任务会调用 WSL 内的 `scripts/run-daily.sh`，该脚本运行项目自带的 `.venv/bin/xrag --root <项目根> collect --all`。`config/keywords.yaml` 中的 `schedule.enabled: false` **不会**停止 `run-daily.sh`，也不会禁用或删除已注册的 Windows 任务。需要暂停或删除时显式执行：
+
+```powershell
+Disable-ScheduledTask -TaskName 'X-RAG Daily Collection'
+Unregister-ScheduledTask -TaskName 'X-RAG Daily Collection' -Confirm:$false
+```
+
+如需重新启用已禁用的任务，执行 `Enable-ScheduledTask -TaskName 'X-RAG Daily Collection'`。如需更新 WSL 发行版或触发时间，使用新参数重新运行上述安装命令；脚本会使用 `-Force` 更新同名任务。
 
 ## 备份与恢复
 
-备份时保留 `data/markdown/` 和 `config/`。`data/chroma/` 不是权威数据，可不备份。恢复这两个目录后，在 WSL 项目根目录重建向量索引：
+为了获得一致快照，备份前先禁用或暂停 Windows 计划任务，并确保没有手动的 `collect`、`import` 或 `rebuild` 写入操作正在运行。必备内容是权威数据 `data/markdown/` 和配置 `config/`。如果把原始导入文件保留在 `data/imports/`，也应一并备份；如需审计历史，可选备份 `logs/`。`data/chroma/` 是可重建索引，可不备份。
+
+恢复必备目录（以及需要保留的 `data/imports/`/`logs/`）后，在 WSL 项目根目录重建向量索引：
 
 ```bash
 xrag --root . rebuild
