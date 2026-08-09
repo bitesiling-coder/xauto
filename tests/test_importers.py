@@ -109,3 +109,99 @@ def test_load_posts_rejects_malformed_markdown_or_missing_text(tmp_path: Path, c
 
     with pytest.raises(ValueError):
         load_posts(path)
+
+
+def test_markdown_uses_a_safe_stem_only_when_id_is_missing(tmp_path: Path) -> None:
+    fallback = tmp_path / "safe-id.md"
+    explicit = tmp_path / "safe-id-2.md"
+    unsafe = tmp_path / "unsafe.stem.md"
+    fallback.write_text("---\nauthor: Ada\n---\nbody\n", encoding="utf-8")
+    explicit.write_text("---\nid: explicit-id\n---\nbody\n", encoding="utf-8")
+    unsafe.write_text("---\nauthor: Ada\n---\nbody\n", encoding="utf-8")
+
+    assert load_posts(fallback)[0].id == "safe-id"
+    assert load_posts(explicit)[0].id == "explicit-id"
+    with pytest.raises(ValueError, match="id"):
+        load_posts(unsafe)
+
+
+@pytest.mark.parametrize(
+    "content, match",
+    [
+        ("---\nid: post\ntext: ignored\n", "closing delimiter"),
+        ("---\n- not\n- mapping\n---\nbody\n", "expected a mapping"),
+    ],
+)
+def test_load_posts_rejects_invalid_markdown_front_matter(
+    tmp_path: Path, content: str, match: str
+) -> None:
+    path = tmp_path / "post.md"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        load_posts(path)
+
+
+def test_load_posts_rejects_a_non_mapping_list_row(tmp_path: Path) -> None:
+    path = tmp_path / "posts.yaml"
+    path.write_text("- id: valid\n  text: valid\n- invalid\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="mapping"):
+        load_posts(path)
+
+
+@pytest.mark.parametrize("post_id", ["", "   ", True, 1.5])
+def test_load_posts_rejects_invalid_post_ids(tmp_path: Path, post_id: object) -> None:
+    path = tmp_path / "post.yaml"
+    path.write_text(yaml.safe_dump({"id": post_id, "text": "valid"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="id"):
+        load_posts(path)
+
+
+def test_load_posts_accepts_integer_id_and_author_bio_alias(tmp_path: Path) -> None:
+    path = tmp_path / "post.yaml"
+    path.write_text("id: 7\ntext: valid\nauthor_bio: profile\n", encoding="utf-8")
+
+    [post] = load_posts(path)
+
+    assert post.id == "7"
+    assert post.bio == "profile"
+
+
+def test_load_posts_preserves_datetime_lists_numbers_and_utf8_text(tmp_path: Path) -> None:
+    path = tmp_path / "post.yaml"
+    path.write_text(
+        """id: chinese-post
+text: 中文内容
+created_at: 2026-08-08T10:30:00Z
+likes: 5
+views: 1739
+media_urls: ["", 7, " https://example.com/one.jpg ", null, "https://example.com/two.jpg"]
+source_keywords: ["", 7, " AI ", null, "GPU"]
+""",
+        encoding="utf-8",
+    )
+
+    [post] = load_posts(path)
+
+    assert post.text == "中文内容"
+    assert post.created_at.startswith("2026-08-08T10:30:00")
+    assert post.likes == 5
+    assert post.views == 1739
+    assert post.media_urls == ("https://example.com/one.jpg", "https://example.com/two.jpg")
+    assert post.source_keywords == ("AI", "GPU")
+
+
+def test_load_posts_does_not_write_or_recurse(tmp_path: Path) -> None:
+    source = tmp_path / "source.yaml"
+    nested = tmp_path / "nested"
+    source.write_bytes("id: original\ntext: unchanged\n".encode("utf-8"))
+    nested.mkdir()
+    (nested / "inside.yaml").write_text("id: nested\ntext: ignored\n", encoding="utf-8")
+    before = source.read_bytes()
+
+    assert load_posts(source)[0].id == "original"
+    assert source.read_bytes() == before
+    with pytest.raises(ValueError, match="Unsupported"):
+        load_posts(nested)
