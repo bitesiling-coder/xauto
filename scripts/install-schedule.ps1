@@ -12,12 +12,8 @@ if ($ScheduleTime -notmatch '^(?:[01]\d|2[0-3]):[0-5]\d$') {
     throw "Invalid schedule time '$ScheduleTime'. Expected HH:mm in 24-hour time (for example, 10:00)."
 }
 
-if ([string]::IsNullOrWhiteSpace($Distribution)) {
-    throw "Distribution must name a WSL distribution."
-}
-
-if ($Distribution.IndexOfAny([char[]]"`"`r`n") -ge 0) {
-    throw "Distribution cannot contain quotes or line breaks."
+if ($Distribution -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "Distribution must contain only letters, digits, dots, underscores, or hyphens."
 }
 
 $ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
@@ -26,11 +22,32 @@ if (-not (Test-Path -LiteralPath $RunnerWindowsPath -PathType Leaf)) {
     throw "Daily runner does not exist: $RunnerWindowsPath"
 }
 
-$wslRunnerOutput = & wsl.exe -d $Distribution -- wslpath -a $RunnerWindowsPath 2>&1
-$lastExitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
-$translationExitCode = if ($null -eq $lastExitCodeVariable) { 0 } else { $lastExitCodeVariable.Value }
+$previousErrorActionPreference = $ErrorActionPreference
+$previousConsoleOutputEncoding = [Console]::OutputEncoding
+$stderrPath = [System.IO.Path]::GetTempFileName()
+try {
+    $ErrorActionPreference = "Continue"
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $wslRunnerOutput = @(& wsl.exe -d $Distribution -e wslpath -a $RunnerWindowsPath 2> $stderrPath)
+    $lastExitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+    $translationExitCode = if ($null -eq $lastExitCodeVariable) { 0 } else { $lastExitCodeVariable.Value }
+    $wslStderr = if (Test-Path -LiteralPath $stderrPath) {
+        [System.IO.File]::ReadAllText($stderrPath).Trim()
+    } else {
+        ""
+    }
+} finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+    [Console]::OutputEncoding = $previousConsoleOutputEncoding
+    try {
+        [System.IO.File]::Delete($stderrPath)
+    } catch {
+        # The temporary diagnostic file contains no secrets and can be removed later by the OS.
+    }
+}
+
 if ($translationExitCode -ne 0) {
-    throw "Could not translate the runner path with WSL distribution '$Distribution': $wslRunnerOutput"
+    throw "Could not translate the runner path with WSL distribution '$Distribution' (exit code $translationExitCode)."
 }
 
 $WslRunnerPath = ($wslRunnerOutput | Out-String).Trim()
@@ -38,15 +55,15 @@ if ([string]::IsNullOrWhiteSpace($WslRunnerPath)) {
     throw "WSL returned an empty path for the daily runner."
 }
 
-if ($WslRunnerPath.IndexOfAny([char[]]"`"`r`n") -ge 0) {
-    throw "The translated WSL runner path contains an unsupported quote or line break."
+if ($WslRunnerPath -match '[\x00-\x1F\x7F"]') {
+    throw "The translated WSL runner path contains an unsupported quote or control character."
 }
 
-$ActionArguments = '-d "{0}" -- bash "{1}"' -f $Distribution, $WslRunnerPath
+$ActionArguments = '-d {0} -e bash "{1}"' -f $Distribution, $WslRunnerPath
 
 if ($DryRun) {
     Write-Output "Dry run: task='$TaskName' time='$ScheduleTime' action=wsl.exe $ActionArguments"
-    exit 0
+    return
 }
 
 $Action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument $ActionArguments
