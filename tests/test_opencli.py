@@ -78,7 +78,7 @@ def test_client_runs_the_expected_command_and_returns_empty_results() -> None:
     assert calls == [
         (
             ["opencli", "twitter", "search", "AI", "--limit", "12", "-f", "yaml"],
-            {"capture_output": True, "text": True, "encoding": "utf-8", "timeout": 30, "check": False},
+            {"capture_output": True, "text": True, "encoding": "utf-8", "timeout": 180, "check": False},
         )
     ]
 
@@ -89,3 +89,38 @@ def test_client_raises_stderr_for_nonzero_results() -> None:
 
     with pytest.raises(OpenCLIError, match="search unavailable"):
         OpenCLIClient(run=run).search("AI", 12)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired(["opencli"], 180),
+        FileNotFoundError("opencli not found"),
+    ],
+)
+def test_client_wraps_expected_execution_failures(failure: Exception) -> None:
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise failure
+
+    with pytest.raises(OpenCLIError, match="OpenCLI search execution failed") as error:
+        OpenCLIClient(run=run).search("AI", 12)
+
+    assert error.value.__cause__ is failure
+
+
+def test_parse_search_yaml_preserves_unquoted_iso_created_at() -> None:
+    posts = parse_search_yaml(
+        """
+- id: "42"
+  text: "valid"
+  created_at: 2026-08-08T10:30:00Z
+""",
+        "AI",
+    )
+
+    assert posts[0].created_at.startswith("2026-08-08T10:30:00")
+
+
+@pytest.mark.parametrize("post_id", ["[]", "{}", "true"])
+def test_parse_search_yaml_skips_non_scalar_post_ids(post_id: str) -> None:
+    assert parse_search_yaml(f"- id: {post_id}\n  text: valid\n", "AI") == []

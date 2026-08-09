@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date, datetime
 import subprocess
 
 import yaml
@@ -16,7 +17,7 @@ class OpenCLIClient:
     def __init__(
         self,
         run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-        timeout: float = 30,
+        timeout: float = 180,
     ) -> None:
         self._run = run
         self._timeout = timeout
@@ -32,14 +33,17 @@ class OpenCLIClient:
             "-f",
             "yaml",
         ]
-        result = self._run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=self._timeout,
-            check=False,
-        )
+        try:
+            result = self._run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=self._timeout,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, OSError, UnicodeError) as error:
+            raise OpenCLIError(f"OpenCLI search execution failed: {error}") from error
         if result.returncode != 0:
             message = result.stderr or result.stdout or "opencli search failed"
             raise OpenCLIError(message.strip())
@@ -77,7 +81,7 @@ def _normalize_post(row: dict[object, object], keyword: str) -> Post | None:
         id=post_id,
         author=author,
         text=text,
-        created_at=_string(row.get("created_at")),
+        created_at=_timestamp(row.get("created_at")),
         url=url,
         bio=_string(row.get("bio")),
         likes=_integer(row.get("likes")),
@@ -92,9 +96,15 @@ def _string(value: object) -> str:
 
 
 def _identifier(value: object) -> str:
-    if isinstance(value, bool) or value is None:
-        return ""
-    return str(value).strip()
+    if isinstance(value, str):
+        return value.strip()
+    return str(value) if type(value) is int else ""
+
+
+def _timestamp(value: object) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return _string(value)
 
 
 def _integer(value: object) -> int:
