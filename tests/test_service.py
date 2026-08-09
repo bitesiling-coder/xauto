@@ -40,10 +40,7 @@ class Vectors:
     def index_post(self, item: Post, path: Path) -> int:
         self.indexed.append(item.id)
         if item.id in self.failures:
-            raise RuntimeError(
-                f"index failed for {item.id}; leaked={item.text}; "
-                "auth_token=very-secret ct0=also-secret"
-            )
+            raise RuntimeError("embedding rejected snippet RECOGNIZABLE")
         return 2
 
     def clear(self) -> None:
@@ -80,7 +77,9 @@ def make_service(tmp_path: Path, client: OpenCLI, vectors: Vectors) -> XragServi
 
 def test_collect_stores_before_indexing_continues_after_index_error_and_writes_summary(tmp_path: Path) -> None:
     vectors = Vectors({"bad"})
-    service = make_service(tmp_path, OpenCLI([post("bad", "PRIVATE BODY"), post("good")]), vectors)
+    service = make_service(
+        tmp_path, OpenCLI([post("bad", "RECOGNIZABLE BODY"), post("good")]), vectors
+    )
 
     result = service.collect("AI", limit=2)
 
@@ -91,8 +90,9 @@ def test_collect_stores_before_indexing_continues_after_index_error_and_writes_s
     assert last_run == {"operation": "collect", "time": "2026-08-09T12:00:00Z", "keyword": "AI", "counts": result}
     assert list((tmp_path / "logs").glob("*.tmp")) == []
     errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
-    assert "bad" in errors and "RuntimeError" in errors and "index failed" in errors
-    assert "PRIVATE BODY" not in errors and "very-secret" not in errors and "also-secret" not in errors
+    assert "bad" in errors and "RuntimeError" in errors and "post processing failed" in errors
+    assert "embedding rejected snippet RECOGNIZABLE" not in errors
+    assert "RECOGNIZABLE" not in errors
 
 
 def test_collect_all_preserves_keyword_order_and_sleeps_only_between(tmp_path: Path) -> None:

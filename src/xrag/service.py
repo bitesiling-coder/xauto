@@ -171,9 +171,11 @@ class XragService:
         self, operation: str, source: str, error: Exception, *, sensitive: str = ""
     ) -> None:
         raw_message = str(error)
-        message = _redact(raw_message.splitlines()[0] if raw_message else "")
-        if sensitive:
-            message = message.replace(sensitive, "[REDACTED]")
+        message = (
+            "post processing failed"
+            if sensitive
+            else _redact(raw_message.splitlines()[0] if raw_message else "")
+        )
         record = {
             "operation": operation,
             "source": _redact(source)[:_MAX_ERROR_LENGTH],
