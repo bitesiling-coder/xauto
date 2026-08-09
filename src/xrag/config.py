@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import re
 
 import yaml
 
@@ -48,6 +49,8 @@ def load_config(root: Path) -> AppConfig:
     collection = _mapping(raw_config, "collection")
     embedding = _mapping(raw_config, "embedding")
     schedule_time = _string(schedule, "time")
+    if not re.fullmatch(r"\d{2}:\d{2}", schedule_time):
+        raise ValueError("Schedule time must use HH:MM format")
     try:
         datetime.strptime(schedule_time, "%H:%M")
     except ValueError as error:

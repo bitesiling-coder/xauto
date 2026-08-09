@@ -46,6 +46,16 @@ def test_load_config_rejects_invalid_schedule_time(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
+@pytest.mark.parametrize("schedule_time", ["1:00", "01:0", "1:0"])
+def test_load_config_rejects_non_zero_padded_schedule_time(
+    tmp_path: Path, schedule_time: str
+) -> None:
+    write_config(tmp_path, schedule_time, ["人工智能"])
+
+    with pytest.raises(ValueError, match="HH:MM"):
+        load_config(tmp_path)
+
+
 def test_load_config_rejects_empty_keyword_list(tmp_path: Path) -> None:
     write_config(tmp_path, "10:00", ["", "  "])
 
