@@ -74,10 +74,10 @@ class VectorStore:
     def close(self) -> None:
         if self._closed:
             return
-        self._closed = True
         close = getattr(self._client, "close", None)
         if callable(close):
             close()
+        self._closed = True
 
     def index_post(self, post: Post, markdown_path: Path) -> int:
         chunks = chunk_text(post.text, self.max_chars, self.overlap)

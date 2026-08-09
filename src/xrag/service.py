@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
@@ -50,6 +51,7 @@ class XragService:
         markdown: MarkdownStore,
         vectors: Any,
         *,
+        vector_factory: Callable[[Path], Any] | None = None,
         rebuild_factory: Callable[[Path], Any] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], object] | None = None,
@@ -58,6 +60,7 @@ class XragService:
         self.opencli = opencli
         self.markdown = markdown
         self.vectors = vectors
+        self._vector_factory = vector_factory
         self._rebuild_factory = rebuild_factory
         self._sleep = sleep
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -67,17 +70,21 @@ class XragService:
         posts = self.opencli.search(keyword, effective_limit)
         counts = {"found": len(posts), "stored": 0, "chunks": 0, "errors": 0}
         with writer_lock(self.config.root):
-            for item in posts:
-                try:
-                    path = self.markdown.upsert(item)
-                    counts["stored"] += 1
-                    counts["chunks"] += self.vectors.index_post(item, path)
-                except Exception as error:
-                    counts["errors"] += 1
-                    self._log_error(
-                        "collect", self._post_id(item), error, sensitive=self._post_text(item)
-                    )
-            self._write_last_run("collect", counts, keyword=keyword)
+            with self._vector_session() as vectors:
+                for item in posts:
+                    try:
+                        path = self.markdown.upsert(item)
+                        counts["stored"] += 1
+                        counts["chunks"] += vectors.index_post(item, path)
+                    except Exception as error:
+                        counts["errors"] += 1
+                        self._log_error(
+                            "collect",
+                            self._post_id(item),
+                            error,
+                            sensitive=self._post_text(item),
+                        )
+                self._write_last_run("collect", counts, keyword=keyword)
         return counts
 
     def collect_all(self) -> list[tuple[str, dict[str, int]]]:
@@ -93,53 +100,41 @@ class XragService:
         files = self._import_files(source)
         counts = {"files": len(files), "imported": 0, "chunks": 0, "errors": 0}
         with writer_lock(self.config.root):
-            for path in files:
-                try:
-                    # Validate and normalize the complete file before writing any post from it.
-                    posts = load_posts(path)
-                except Exception as error:
-                    counts["errors"] += 1
-                    self._log_error("import", str(path), error)
-                    continue
-                for item in posts:
+            with self._vector_session() as vectors:
+                for path in files:
                     try:
-                        markdown_path = self.markdown.upsert(item)
-                        counts["imported"] += 1
-                        counts["chunks"] += self.vectors.index_post(item, markdown_path)
+                        # Validate the complete file before writing any post from it.
+                        posts = load_posts(path)
                     except Exception as error:
                         counts["errors"] += 1
-                        self._log_error(
-                            "import", f"{path}#{self._post_id(item)}", error,
-                            sensitive=self._post_text(item),
-                        )
-            self._write_last_run("import", counts)
+                        self._log_error("import", str(path), error)
+                        continue
+                    for item in posts:
+                        try:
+                            markdown_path = self.markdown.upsert(item)
+                            counts["imported"] += 1
+                            counts["chunks"] += vectors.index_post(item, markdown_path)
+                        except Exception as error:
+                            counts["errors"] += 1
+                            self._log_error(
+                                "import",
+                                f"{path}#{self._post_id(item)}",
+                                error,
+                                sensitive=self._post_text(item),
+                            )
+                self._write_last_run("import", counts)
         return counts
 
     def search(self, query: str, top: int) -> Any:
-        return self.vectors.search(query, top)
+        with writer_lock(self.config.root):
+            with self._vector_session() as vectors:
+                return vectors.search(query, top)
 
     def rebuild(self) -> dict[str, int]:
+        if self._rebuild_factory is None:
+            raise RuntimeError("Atomic rebuild requires a rebuild factory")
         with writer_lock(self.config.root):
-            if self._rebuild_factory is None:
-                return self._rebuild_in_place()
             return self._rebuild_atomic()
-
-    def _rebuild_in_place(self) -> dict[str, int]:
-        counts = {"documents": 0, "chunks": 0, "errors": 0}
-        self.vectors.clear()
-        for path in sorted(self.markdown.directory.glob("*.md"), key=str):
-            counts["documents"] += 1
-            item: object | None = None
-            try:
-                item = self.markdown.read(path)
-                counts["chunks"] += self.vectors.index_post(item, path)
-            except Exception as error:
-                counts["errors"] += 1
-                self._log_error(
-                    "rebuild", str(path), error, sensitive=self._post_text(item)
-                )
-        self._write_last_run("rebuild", counts)
-        return counts
 
     def _rebuild_atomic(self) -> dict[str, int]:
         counts = {"documents": 0, "chunks": 0, "errors": 0}
@@ -172,7 +167,7 @@ class XragService:
                     )
 
             if counts["errors"]:
-                self._close_rebuild_store(staging_store)
+                self._close_vector_store(staging_store)
                 staging_store = None
                 self._remove_rebuild_path(staging, parent, _STAGING_PREFIX)
                 staging = None
@@ -188,17 +183,22 @@ class XragService:
 
             store_to_close = staging_store
             staging_store = None
-            self._close_rebuild_store(store_to_close)
-            self._swap_rebuild(staging, stable, parent)
+            self._close_vector_store(store_to_close)
+            cleanup_pending = self._swap_rebuild(staging, stable, parent)
             staging = None
-            self._write_last_run("rebuild", counts)
+            if cleanup_pending is None:
+                self._write_last_run("rebuild", counts)
+            else:
+                self._write_last_run(
+                    "rebuild", counts, cleanup_pending=cleanup_pending.name
+                )
             return counts
         except Exception as error:
             counts["errors"] += 1
             self._log_error("rebuild", str(staging or stable), error)
             if staging_store is not None:
                 try:
-                    self._close_rebuild_store(staging_store)
+                    self._close_vector_store(staging_store)
                 except Exception as close_error:
                     self._log_error("rebuild", str(staging or stable), close_error)
             if staging is not None:
@@ -210,17 +210,18 @@ class XragService:
             raise
 
     @staticmethod
-    def _close_rebuild_store(store: Any) -> None:
+    def _close_vector_store(store: Any) -> None:
         close = getattr(store, "close", None)
         if callable(close):
             close()
 
-    @classmethod
-    def _swap_rebuild(cls, staging: Path, stable: Path, parent: Path) -> None:
-        cls._validate_rebuild_path(staging, parent, _STAGING_PREFIX)
+    def _swap_rebuild(
+        self, staging: Path, stable: Path, parent: Path
+    ) -> Path | None:
+        self._validate_rebuild_path(staging, parent, _STAGING_PREFIX)
         backup: Path | None = None
         if stable.exists():
-            backup = cls._unused_rebuild_path(parent, _BACKUP_PREFIX)
+            backup = self._unused_rebuild_path(parent, _BACKUP_PREFIX)
             os.replace(stable, backup)
         try:
             os.replace(staging, stable)
@@ -235,7 +236,14 @@ class XragService:
                     ) from rollback_error
             raise swap_error
         if backup is not None:
-            cls._remove_rebuild_path(backup, parent, _BACKUP_PREFIX)
+            try:
+                self._remove_rebuild_path(backup, parent, _BACKUP_PREFIX)
+            except Exception as cleanup_error:
+                self._log_error(
+                    "rebuild-cleanup", backup.name, cleanup_error
+                )
+                return backup
+        return None
 
     @staticmethod
     def _unused_rebuild_path(parent: Path, prefix: str) -> Path:
@@ -263,30 +271,53 @@ class XragService:
         shutil.rmtree(path)
 
     def status(self) -> dict[str, Any]:
-        paths = sorted(self.markdown.directory.glob("*.md"), key=str)
-        document_errors = 0
-        for path in paths:
-            try:
-                self.markdown.read(path)
-            except Exception:
-                document_errors += 1
-        result: dict[str, Any] = {
-            "documents": len(paths),
-            "document_errors": document_errors,
-            "chunks": self.vectors.count(),
-            "keywords": len(self.config.keywords),
-            "last_run": None,
-        }
-        path = self.config.log_dir / "last-run.json"
-        if path.exists():
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(value, dict):
-                    raise ValueError("last-run root is not an object")
-                result["last_run"] = value
-            except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
-                result["last_run_status"] = f"error reading last-run.json: {error}"
-        return result
+        with writer_lock(self.config.root):
+            with self._vector_session() as vectors:
+                paths = sorted(self.markdown.directory.glob("*.md"), key=str)
+                document_errors = 0
+                for path in paths:
+                    try:
+                        self.markdown.read(path)
+                    except Exception:
+                        document_errors += 1
+                result: dict[str, Any] = {
+                    "documents": len(paths),
+                    "document_errors": document_errors,
+                    "chunks": vectors.count(),
+                    "keywords": len(self.config.keywords),
+                    "last_run": None,
+                }
+                path = self.config.log_dir / "last-run.json"
+                if path.exists():
+                    try:
+                        value = json.loads(path.read_text(encoding="utf-8"))
+                        if not isinstance(value, dict):
+                            raise ValueError("last-run root is not an object")
+                        result["last_run"] = value
+                    except (
+                        OSError,
+                        UnicodeError,
+                        json.JSONDecodeError,
+                        ValueError,
+                    ) as error:
+                        result["last_run_status"] = (
+                            f"error reading last-run.json: {error}"
+                        )
+                return result
+
+    @contextmanager
+    def _vector_session(self) -> Iterator[Any]:
+        if self._vector_factory is None:
+            if self.vectors is None:
+                raise RuntimeError("Vector store requires a vector factory")
+            yield self.vectors
+            return
+
+        store = self._vector_factory(self.config.chroma_dir)
+        try:
+            yield store
+        finally:
+            self._close_vector_store(store)
 
     def _import_files(self, source: Path) -> list[Path]:
         if not source.exists():

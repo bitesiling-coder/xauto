@@ -103,7 +103,13 @@ def test_fixture_round_trips_to_canonical_markdown_and_rebuilds_offline(tmp_path
         metadata={"hnsw:space": "cosine"},
     )
     vectors = VectorStore(collection)
-    service = XragService(config, opencli=None, markdown=markdown, vectors=vectors)
+    service = XragService(
+        config,
+        opencli=None,
+        markdown=markdown,
+        vectors=vectors,
+        rebuild_factory=lambda path: vectors,
+    )
 
     assert service.rebuild() == {"documents": 1, "chunks": 1, "errors": 0}
     assert vectors.count() == 1

@@ -49,22 +49,22 @@ def main(
 def build_service(root: Path) -> XragService:
     config = load_config(root.resolve())
     markdown = MarkdownStore(config.markdown_dir)
-    vectors = VectorStore.persistent(config.chroma_dir, config.embedding_model)
-    return XragService(config, OpenCLIClient(), markdown, vectors)
 
+    def vector_factory(path: Path) -> VectorStore:
+        return VectorStore.persistent(path, config.embedding_model)
 
-def build_rebuild_service(root: Path) -> XragService:
-    config = load_config(root.resolve())
-    markdown = MarkdownStore(config.markdown_dir)
     return XragService(
         config,
         OpenCLIClient(),
         markdown,
         None,
-        rebuild_factory=lambda path: VectorStore.persistent(
-            path, config.embedding_model
-        ),
+        vector_factory=vector_factory,
+        rebuild_factory=vector_factory,
     )
+
+
+def build_rebuild_service(root: Path) -> XragService:
+    return build_service(root)
 
 
 def _service(ctx: typer.Context) -> XragService:

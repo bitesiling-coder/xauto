@@ -232,3 +232,36 @@ def test_count_mismatch_never_swaps_complete_looking_staging(tmp_path: Path) -> 
 
     assert (stable / "old-sentinel").read_bytes() == b"old"
     assert sibling_workdirs(stable) == []
+
+
+def test_backup_cleanup_failure_keeps_new_index_and_records_success_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stable = tmp_path / "data" / "chroma"
+    stable.mkdir(parents=True)
+    (stable / "old-sentinel").write_bytes(b"old")
+    service, markdown = service_with_factory(tmp_path, StagingStore)
+    add_post(markdown, "a")
+    real_rmtree = service_module.shutil.rmtree
+
+    def fail_backup_cleanup(path: object) -> None:
+        if Path(path).name.startswith(".xrag-chroma-backup-"):
+            raise OSError("cleanup blocked auth_token=never-log-this")
+        real_rmtree(path)
+
+    monkeypatch.setattr(service_module.shutil, "rmtree", fail_backup_cleanup)
+
+    result = service.rebuild()
+
+    assert result == {"documents": 1, "chunks": 2, "errors": 0}
+    assert (stable / "new-sentinel").exists()
+    assert not (stable / "old-sentinel").exists()
+    backups = list(stable.parent.glob(".xrag-chroma-backup-*"))
+    assert len(backups) == 1 and (backups[0] / "old-sentinel").exists()
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run["counts"] == result
+    assert last_run["cleanup_pending"] == backups[0].name
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "rebuild-cleanup" in errors
+    assert "cleanup blocked" in errors
+    assert "never-log-this" not in errors

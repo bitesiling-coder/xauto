@@ -224,6 +224,29 @@ def test_rebuild_builder_defers_chroma_open_and_factory_uses_only_staging(
     assert model == "configured-model"
 
 
+def test_normal_builder_defers_stable_chroma_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from xrag.config import AppConfig
+
+    configuration = AppConfig(
+        tmp_path.resolve(), False, "03:00", "UTC", 7, 0, ("AI",), "configured-model"
+    )
+    calls: list[tuple[Path, str]] = []
+
+    def persistent(path: Path, model: str) -> object:
+        calls.append((Path(path), model))
+        raise AssertionError("operation, not construction, may open Chroma")
+
+    monkeypatch.setattr(cli, "load_config", lambda root: configuration)
+    monkeypatch.setattr(cli.VectorStore, "persistent", persistent)
+
+    service = cli.build_service(tmp_path)
+
+    assert calls == []
+    assert service.config is configuration
+
+
 def test_operational_error_is_redacted_and_has_no_traceback(monkeypatch) -> None:
     def fail(root: Path) -> object:
         raise OpenCLIError(

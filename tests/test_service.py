@@ -309,35 +309,21 @@ def test_authorization_summary_redacts_complete_unquoted_credentials(
     assert all(payload not in error_log for payload in payloads)
 
 
-def test_rebuild_clears_first_continues_after_document_error_and_preserves_markdown(tmp_path: Path) -> None:
-    markdown = MarkdownStore(tmp_path / "data/markdown")
-    markdown.upsert(post("a"))
-    markdown.upsert(post("b"))
-    before = {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")}
-    vectors = Vectors({"a"})
-    service = XragService(config(tmp_path), OpenCLI(), markdown, vectors)
-
-    assert service.rebuild() == {"documents": 2, "chunks": 2, "errors": 1}
-    assert vectors.cleared == 1 and vectors.indexed == ["a", "b"]
-    assert {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")} == before
-
-
-def test_rebuild_isolates_malformed_markdown_and_continues_in_path_order(tmp_path: Path) -> None:
-    markdown = MarkdownStore(tmp_path / "data/markdown")
-    markdown.upsert(post("a"))
-    malformed = markdown.directory / "b.md"
-    malformed.write_text("not front matter\n", encoding="utf-8")
-    markdown.upsert(post("c"))
-    before = {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")}
+def test_rebuild_without_factory_refuses_to_touch_old_index(tmp_path: Path) -> None:
+    stable = tmp_path / "data/chroma"
+    stable.mkdir(parents=True)
+    sentinel = stable / "old-sentinel"
+    sentinel.write_bytes(b"preserve")
     vectors = Vectors()
-    service = XragService(config(tmp_path), OpenCLI(), markdown, vectors)
+    service = XragService(
+        config(tmp_path), OpenCLI(), MarkdownStore(tmp_path / "data/markdown"), vectors
+    )
 
-    assert service.rebuild() == {"documents": 3, "chunks": 4, "errors": 1}
-    assert vectors.cleared == 1
-    assert vectors.indexed == ["a", "c"]
-    assert {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")} == before
-    error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
-    assert "b.md" in error_log and "front matter" in error_log
+    with pytest.raises(RuntimeError, match="factory"):
+        service.rebuild()
+
+    assert sentinel.read_bytes() == b"preserve"
+    assert vectors.cleared == 0
 
 
 def test_search_delegates_and_status_handles_empty_valid_and_malformed_last_run(tmp_path: Path) -> None:

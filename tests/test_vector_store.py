@@ -312,6 +312,27 @@ def test_close_is_idempotent_and_injected_collection_needs_no_client():
     assert client.closed == 1
 
 
+def test_close_failure_can_be_retried():
+    class FailOnceClient:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        def close(self) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise OSError("still busy")
+
+    client = FailOnceClient()
+    store = VectorStore(FakeCollection(), client=client)
+
+    with pytest.raises(OSError, match="still busy"):
+        store.close()
+    store.close()
+    store.close()
+
+    assert client.attempts == 2
+
+
 def test_persistent_wraps_dependency_failure(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "chromadb", None)
     with pytest.raises(RuntimeError, match="initialize persistent Chroma vector store"):
