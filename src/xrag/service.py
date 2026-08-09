@@ -28,6 +28,12 @@ _SECRET = re.compile(
     (?:"[^"]*"|'[^']*'|[^\s,;}]+)
     '''
 )
+_AUTHORIZATION = re.compile(
+    r'''(?ix)
+    ["']?\bauthorization\b["']?\s*[:=]\s*
+    (?:"[^"]*"|'[^']*'|Digest\b[^\r\n;]*|[^\r\n,;]*)
+    '''
+)
 _BEARER = re.compile(r"(?i)\bBearer\s+[^\s,;}\]]+")
 _MAX_ERROR_LENGTH = 500
 
@@ -262,5 +268,6 @@ def _json_line(value: object) -> str:
 
 
 def _redact(value: str) -> str:
-    redacted = _BEARER.sub("Bearer [REDACTED]", value)
+    redacted = _AUTHORIZATION.sub("authorization=[REDACTED]", value)
+    redacted = _BEARER.sub("Bearer [REDACTED]", redacted)
     return _SECRET.sub(lambda match: f"{match.group(1)}=[REDACTED]", redacted)

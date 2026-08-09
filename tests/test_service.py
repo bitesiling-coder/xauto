@@ -287,6 +287,28 @@ def test_non_post_error_summary_scrubs_common_secret_forms(
     assert secret not in (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize(
+    "message, payloads",
+    [
+        ("Authorization: Basic dXNlcjpwYXNz", ("dXNlcjpwYXNz",)),
+        ("authorization=Token TOPSECRET", ("TOPSECRET",)),
+        (
+            "Authorization: Digest username=x, response=y",
+            ("username=x", "response=y"),
+        ),
+    ],
+)
+def test_authorization_summary_redacts_complete_unquoted_credentials(
+    tmp_path: Path, message: str, payloads: tuple[str, ...]
+) -> None:
+    service = make_service(tmp_path, OpenCLI(), Vectors())
+
+    service._log_error("import", "fixture", ValueError(message))
+
+    error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert all(payload not in error_log for payload in payloads)
+
+
 def test_rebuild_clears_first_continues_after_document_error_and_preserves_markdown(tmp_path: Path) -> None:
     markdown = MarkdownStore(tmp_path / "data/markdown")
     markdown.upsert(post("a"))
