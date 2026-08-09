@@ -46,14 +46,18 @@ def make_post(text="甲乙丙丁戊己庚辛"):
     )
 
 
-def test_index_post_deletes_first_and_upserts_stable_ids_and_metadata(tmp_path):
+def test_index_post_upserts_stable_ids_and_metadata_before_stale_cleanup(tmp_path):
     collection = FakeCollection()
+    collection.get_result = {"ids": ["post-1:0", "post-1:1", "post-1:2"]}
     store = VectorStore(collection, max_chars=5, overlap=1)
     markdown_path = tmp_path / "post-1.md"
 
     assert store.index_post(make_post(), markdown_path) == 2
 
-    assert collection.calls[0] == ("delete", {"where": {"post_id": "post-1"}})
+    assert collection.calls[0] == (
+        "get",
+        {"where": {"post_id": "post-1"}, "include": []},
+    )
     operation, payload = collection.calls[1]
     assert operation == "upsert"
     assert payload["ids"] == ["post-1:0", "post-1:1"]
@@ -74,14 +78,45 @@ def test_index_post_deletes_first_and_upserts_stable_ids_and_metadata(tmp_path):
             "markdown_path": str(markdown_path),
         },
     ]
+    assert collection.calls[2] == ("delete", {"ids": ["post-1:2"]})
 
 
 def test_index_empty_post_only_removes_existing_chunks(tmp_path):
     collection = FakeCollection()
+    collection.get_result = {"ids": ["post-1:0", "post-1:1"]}
     store = VectorStore(collection)
 
     assert store.index_post(make_post(" \n\n "), tmp_path / "post.md") == 0
-    assert collection.calls == [("delete", {"where": {"post_id": "post-1"}})]
+    assert collection.calls == [
+        ("get", {"where": {"post_id": "post-1"}, "include": []}),
+        ("delete", {"ids": ["post-1:0", "post-1:1"]}),
+    ]
+
+
+def test_index_upsert_failure_preserves_existing_chunks(tmp_path):
+    class BrokenUpsertCollection(FakeCollection):
+        def upsert(self, **kwargs):
+            self.calls.append(("upsert", kwargs))
+            raise RuntimeError("write failed")
+
+    collection = BrokenUpsertCollection()
+    collection.get_result = {"ids": ["post-1:0", "post-1:1", "post-1:2"]}
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        VectorStore(collection, max_chars=5, overlap=1).index_post(
+            make_post(), tmp_path / "post.md"
+        )
+
+    assert [operation for operation, _ in collection.calls] == ["get", "upsert"]
+
+
+@pytest.mark.parametrize("get_result", [None, {}, {"ids": "post-1:0"}, {"ids": [""]}])
+def test_index_rejects_malformed_existing_ids_before_mutation(tmp_path, get_result):
+    collection = FakeCollection()
+    collection.get_result = get_result
+    with pytest.raises(ValueError, match="Malformed Chroma get result"):
+        VectorStore(collection).index_post(make_post(), tmp_path / "post.md")
+    assert [operation for operation, _ in collection.calls] == ["get"]
 
 
 def test_search_maps_first_result_set_and_clips_similarity():
@@ -138,12 +173,30 @@ def test_search_validates_inputs(query, top):
         {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [[{}]]},
         {"ids": [["p:0"]], "documents": [[]], "metadatas": [[{}]], "distances": [[0.1]]},
         {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [], "distances": [[0.1]]},
-        {"ids": [["p:0"]], "documents": [["text"]], "metadatas": [[{}]], "distances": [["bad"]]},
     ],
 )
 def test_search_rejects_malformed_result_shapes(result):
     collection = FakeCollection()
     collection.query_result = result
+    with pytest.raises(ValueError, match="Malformed Chroma query result"):
+        VectorStore(collection).search("查询", 1)
+
+
+@pytest.mark.parametrize("distance", ["bad", True, float("nan"), float("inf")])
+def test_search_rejects_non_finite_or_non_numeric_distances(distance):
+    collection = FakeCollection()
+    collection.query_result = {
+        "ids": [["p:0"]],
+        "documents": [["text"]],
+        "metadatas": [[{
+            "post_id": "p",
+            "author": "作者",
+            "created_at": "time",
+            "url": "url",
+            "markdown_path": "p.md",
+        }]],
+        "distances": [[distance]],
+    }
     with pytest.raises(ValueError, match="Malformed Chroma query result"):
         VectorStore(collection).search("查询", 1)
 
@@ -168,6 +221,18 @@ def test_clear_deletes_all_returned_ids():
         ("get", {"include": []}),
         ("delete", {"ids": ["p1:0", "p2:0"]}),
     ]
+
+
+@pytest.mark.parametrize(
+    "get_result",
+    [None, {}, {"ids": None}, {"ids": "p1:0"}, {"ids": [""]}, {"ids": [1]}],
+)
+def test_clear_rejects_malformed_get_results(get_result):
+    collection = FakeCollection()
+    collection.get_result = get_result
+    with pytest.raises(ValueError, match="Malformed Chroma get result"):
+        VectorStore(collection).clear()
+    assert collection.calls == [("get", {"include": []})]
 
 
 def test_clear_does_not_retry_without_ids_only_include_when_get_raises():
@@ -196,7 +261,7 @@ def test_persistent_builds_cpu_cosine_collection_without_real_dependencies(tmp_p
 
         def get_or_create_collection(self, **kwargs):
             created["collection"] = kwargs
-            return "collection"
+            return types.SimpleNamespace(metadata=kwargs["metadata"])
 
     chromadb = types.ModuleType("chromadb")
     chromadb.PersistentClient = FakeClient
@@ -217,7 +282,7 @@ def test_persistent_builds_cpu_cosine_collection_without_real_dependencies(tmp_p
     assert created["collection"] == {
         "name": "x_posts",
         "embedding_function": created["embedding_instance"],
-        "metadata": {"hnsw:space": "cosine"},
+        "metadata": {"hnsw:space": "cosine", "xrag:embedding_model": "模型"},
     }
 
 
@@ -245,3 +310,28 @@ def test_persistent_wraps_and_chains_initialization_failure(tmp_path, monkeypatc
     ) as exc_info:
         VectorStore.persistent(tmp_path / "db", "broken-model")
     assert exc_info.value.__cause__ is cause
+
+
+def test_persistent_rejects_collection_bound_to_different_model(tmp_path, monkeypatch):
+    class FakeEmbeddingFunction:
+        def __init__(self, **kwargs):
+            pass
+
+    class FakeClient:
+        def __init__(self, path):
+            pass
+
+        def get_or_create_collection(self, **kwargs):
+            return types.SimpleNamespace(
+                metadata={"hnsw:space": "cosine", "xrag:embedding_model": "old-model"}
+            )
+
+    chromadb = types.ModuleType("chromadb")
+    chromadb.PersistentClient = FakeClient
+    embedding_functions = types.ModuleType("chromadb.utils.embedding_functions")
+    embedding_functions.SentenceTransformerEmbeddingFunction = FakeEmbeddingFunction
+    monkeypatch.setitem(sys.modules, "chromadb", chromadb)
+    monkeypatch.setitem(sys.modules, "chromadb.utils.embedding_functions", embedding_functions)
+
+    with pytest.raises(RuntimeError, match="rebuild/reindex required"):
+        VectorStore.persistent(tmp_path / "db", "new-model")

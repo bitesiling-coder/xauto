@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import math
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +34,20 @@ class VectorStore:
             collection = client.get_or_create_collection(
                 name="x_posts",
                 embedding_function=embedding_function,
-                metadata={"hnsw:space": "cosine"},
+                metadata={
+                    "hnsw:space": "cosine",
+                    "xrag:embedding_model": model_name,
+                },
             )
+            collection_metadata = collection.metadata
+            if (
+                not isinstance(collection_metadata, Mapping)
+                or collection_metadata.get("xrag:embedding_model") != model_name
+            ):
+                raise RuntimeError(
+                    "Chroma collection embedding model does not match; "
+                    "rebuild/reindex required"
+                )
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to initialize persistent Chroma vector store at {path} "
@@ -43,11 +56,18 @@ class VectorStore:
         return cls(collection)
 
     def index_post(self, post: Post, markdown_path: Path) -> int:
-        self.collection.delete(where={"post_id": post.id})
         chunks = chunk_text(post.text, self.max_chars, self.overlap)
+        existing = self.collection.get(
+            where={"post_id": post.id},
+            include=[],
+        )
+        existing_ids = _extract_ids(existing)
         if not chunks:
+            if existing_ids:
+                self.collection.delete(ids=existing_ids)
             return 0
 
+        new_ids = [f"{post.id}:{index}" for index in range(len(chunks))]
         metadata = {
             "post_id": post.id,
             "author": post.author,
@@ -56,10 +76,14 @@ class VectorStore:
             "markdown_path": str(markdown_path),
         }
         self.collection.upsert(
-            ids=[f"{post.id}:{index}" for index in range(len(chunks))],
+            ids=new_ids,
             documents=chunks,
             metadatas=[metadata.copy() for _ in chunks],
         )
+        new_id_set = set(new_ids)
+        stale_ids = [item_id for item_id in existing_ids if item_id not in new_id_set]
+        if stale_ids:
+            self.collection.delete(ids=stale_ids)
         return len(chunks)
 
     def search(self, query: str, top: int) -> list[SearchHit]:
@@ -93,7 +117,13 @@ class VectorStore:
             for document, metadata, distance in zip(documents, metadatas, distances):
                 if not isinstance(metadata, dict):
                     raise TypeError("metadata must be a mapping")
-                score = round(max(0.0, min(1.0, 1.0 - float(distance))), 4)
+                if (
+                    isinstance(distance, bool)
+                    or not isinstance(distance, (int, float))
+                    or not math.isfinite(distance)
+                ):
+                    raise TypeError("distance must be a finite real number")
+                score = round(max(0.0, min(1.0, 1.0 - distance)), 4)
                 hits.append(
                     SearchHit(
                         post_id=str(metadata["post_id"]),
@@ -114,10 +144,24 @@ class VectorStore:
 
     def clear(self) -> None:
         result = self.collection.get(include=[])
-        ids = result.get("ids", []) if isinstance(result, dict) else []
+        ids = _extract_ids(result)
         if ids:
             self.collection.delete(ids=ids)
 
 
 def _is_sequence(value: Any) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _extract_ids(result: Any) -> list[str]:
+    try:
+        if not isinstance(result, Mapping):
+            raise TypeError("result must be a mapping")
+        ids = result["ids"]
+        if not _is_sequence(ids):
+            raise TypeError("ids must be a sequence")
+        if any(not isinstance(item_id, str) or not item_id for item_id in ids):
+            raise TypeError("ids must contain only nonempty strings")
+        return list(ids)
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"Malformed Chroma get result: {exc}") from exc
