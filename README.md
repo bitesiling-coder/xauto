@@ -158,8 +158,8 @@ xrag --root . status
 
 - **OpenCLI 无法收集：**先运行 `opencli doctor`，确认浏览器桥接与 Twitter/X 扩展已连接，再直接测试 `opencli twitter search "DDR5" --limit 1 -f yaml`。
 - **WSL 代理警告或无法下载模型：** Windows 上的 localhost 代理未必能直接从 WSL 访问。先修正 WSL 网络/代理配置，确认 WSL 可访问所需下载地址，再重试首次模型加载。
-- **更换了 `embedding.model`：**旧 Chroma 索引与新模型不匹配，运行 `xrag --root . rebuild` 重新分块/索引全部 Markdown。
-- **Markdown 损坏：** `xrag --root . status` 的 `document_errors` 会报告无法解析的文档数。检查 `logs/errors.jsonl`，修复对应 Markdown front matter 后再 `rebuild`；重建会继续处理其他正常文档。
+- **更换了 `embedding.model` 或 Chroma 损坏：**运行 `xrag --root . rebuild`。重建会在独立目录生成完整新索引，成功后才替换旧索引；模型加载或索引失败时保留旧索引。
+- **Markdown 损坏：** `xrag --root . status` 的 `document_errors` 会报告无法解析的文档数。检查 `logs/errors.jsonl`，修复对应 Markdown front matter 后再 `rebuild`；只要有一篇文档失败，重建就不会替换旧索引。
 - **计划任务失败：**查看 `logs/scheduler.log`、`logs/errors.jsonl` 和 `Get-ScheduledTaskInfo`，确认 WSL 发行版名、`.venv/bin/xrag` 与项目路径存在。
 - **中文乱码：**导入文件必须是 UTF-8；在 WSL 中可设置 `export PYTHONUTF8=1` 后重试。请优先在 WSL 终端运行 CLI。
 

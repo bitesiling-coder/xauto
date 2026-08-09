@@ -6,9 +6,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 import time
 from typing import Any
+import uuid
 
 from .config import AppConfig
 from .importers import load_posts
@@ -36,6 +38,8 @@ _AUTHORIZATION = re.compile(
 )
 _BEARER = re.compile(r"(?i)\bBearer\s+[^\s,;}\]]+")
 _MAX_ERROR_LENGTH = 500
+_STAGING_PREFIX = ".xrag-chroma-staging-"
+_BACKUP_PREFIX = ".xrag-chroma-backup-"
 
 
 class XragService:
@@ -46,6 +50,7 @@ class XragService:
         markdown: MarkdownStore,
         vectors: Any,
         *,
+        rebuild_factory: Callable[[Path], Any] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], object] | None = None,
     ) -> None:
@@ -53,6 +58,7 @@ class XragService:
         self.opencli = opencli
         self.markdown = markdown
         self.vectors = vectors
+        self._rebuild_factory = rebuild_factory
         self._sleep = sleep
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
@@ -113,23 +119,148 @@ class XragService:
         return self.vectors.search(query, top)
 
     def rebuild(self) -> dict[str, int]:
-        counts = {"documents": 0, "chunks": 0, "errors": 0}
         with writer_lock(self.config.root):
-            self.vectors.clear()
+            if self._rebuild_factory is None:
+                return self._rebuild_in_place()
+            return self._rebuild_atomic()
+
+    def _rebuild_in_place(self) -> dict[str, int]:
+        counts = {"documents": 0, "chunks": 0, "errors": 0}
+        self.vectors.clear()
+        for path in sorted(self.markdown.directory.glob("*.md"), key=str):
+            counts["documents"] += 1
+            item: object | None = None
+            try:
+                item = self.markdown.read(path)
+                counts["chunks"] += self.vectors.index_post(item, path)
+            except Exception as error:
+                counts["errors"] += 1
+                self._log_error(
+                    "rebuild", str(path), error, sensitive=self._post_text(item)
+                )
+        self._write_last_run("rebuild", counts)
+        return counts
+
+    def _rebuild_atomic(self) -> dict[str, int]:
+        counts = {"documents": 0, "chunks": 0, "errors": 0}
+        stable = self.config.chroma_dir
+        parent = stable.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        staging: Path | None = None
+        staging_store: Any | None = None
+
+        try:
+            staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=parent))
+            self._validate_rebuild_path(staging, parent, _STAGING_PREFIX)
+            assert self._rebuild_factory is not None
+            staging_store = self._rebuild_factory(staging)
+
             for path in sorted(self.markdown.directory.glob("*.md"), key=str):
+                canonical_path = path.resolve()
                 counts["documents"] += 1
                 item: object | None = None
                 try:
-                    item = self.markdown.read(path)
-                    counts["chunks"] += self.vectors.index_post(item, path)
+                    item = self.markdown.read(canonical_path)
+                    counts["chunks"] += staging_store.index_post(item, canonical_path)
                 except Exception as error:
                     counts["errors"] += 1
                     self._log_error(
-                        "rebuild", str(path), error,
+                        "rebuild",
+                        str(canonical_path),
+                        error,
                         sensitive=self._post_text(item),
                     )
+
+            if counts["errors"]:
+                self._close_rebuild_store(staging_store)
+                staging_store = None
+                self._remove_rebuild_path(staging, parent, _STAGING_PREFIX)
+                staging = None
+                self._write_last_run("rebuild", counts)
+                return counts
+
+            actual_chunks = staging_store.count()
+            if actual_chunks != counts["chunks"]:
+                raise RuntimeError(
+                    "Staging Chroma count validation failed: "
+                    f"expected {counts['chunks']}, found {actual_chunks}"
+                )
+
+            store_to_close = staging_store
+            staging_store = None
+            self._close_rebuild_store(store_to_close)
+            self._swap_rebuild(staging, stable, parent)
+            staging = None
             self._write_last_run("rebuild", counts)
-        return counts
+            return counts
+        except Exception as error:
+            counts["errors"] += 1
+            self._log_error("rebuild", str(staging or stable), error)
+            if staging_store is not None:
+                try:
+                    self._close_rebuild_store(staging_store)
+                except Exception as close_error:
+                    self._log_error("rebuild", str(staging or stable), close_error)
+            if staging is not None:
+                try:
+                    self._remove_rebuild_path(staging, parent, _STAGING_PREFIX)
+                except Exception as cleanup_error:
+                    self._log_error("rebuild", str(staging), cleanup_error)
+            self._write_last_run("rebuild", counts)
+            raise
+
+    @staticmethod
+    def _close_rebuild_store(store: Any) -> None:
+        close = getattr(store, "close", None)
+        if callable(close):
+            close()
+
+    @classmethod
+    def _swap_rebuild(cls, staging: Path, stable: Path, parent: Path) -> None:
+        cls._validate_rebuild_path(staging, parent, _STAGING_PREFIX)
+        backup: Path | None = None
+        if stable.exists():
+            backup = cls._unused_rebuild_path(parent, _BACKUP_PREFIX)
+            os.replace(stable, backup)
+        try:
+            os.replace(staging, stable)
+        except Exception as swap_error:
+            if backup is not None:
+                try:
+                    os.replace(backup, stable)
+                    backup = None
+                except Exception as rollback_error:
+                    raise RuntimeError(
+                        f"Chroma swap failed and rollback failed; old index retained at {backup}"
+                    ) from rollback_error
+            raise swap_error
+        if backup is not None:
+            cls._remove_rebuild_path(backup, parent, _BACKUP_PREFIX)
+
+    @staticmethod
+    def _unused_rebuild_path(parent: Path, prefix: str) -> Path:
+        for _ in range(10):
+            candidate = parent / f"{prefix}{uuid.uuid4().hex}"
+            if not candidate.exists():
+                return candidate
+        raise RuntimeError("Could not allocate a unique Chroma rebuild path")
+
+    @staticmethod
+    def _validate_rebuild_path(path: Path, parent: Path, prefix: str) -> None:
+        if path.parent.resolve() != parent.resolve() or not path.name.startswith(prefix):
+            raise RuntimeError(f"Refusing unverified Chroma rebuild path: {path}")
+        if path.name == prefix:
+            raise RuntimeError(f"Refusing incomplete Chroma rebuild path: {path}")
+
+    @classmethod
+    def _remove_rebuild_path(cls, path: Path, parent: Path, prefix: str) -> None:
+        cls._validate_rebuild_path(path, parent, prefix)
+        if not path.exists() and not path.is_symlink():
+            return
+        if path.is_symlink() or not path.is_dir():
+            path.unlink()
+            return
+        shutil.rmtree(path)
 
     def status(self) -> dict[str, Any]:
         paths = sorted(self.markdown.directory.glob("*.md"), key=str)

@@ -263,6 +263,9 @@ def test_persistent_builds_cpu_cosine_collection_without_real_dependencies(tmp_p
             created["collection"] = kwargs
             return types.SimpleNamespace(metadata=kwargs["metadata"])
 
+        def close(self):
+            created["client_closed"] = created.get("client_closed", 0) + 1
+
     chromadb = types.ModuleType("chromadb")
     chromadb.PersistentClient = FakeClient
     embedding_functions = types.ModuleType("chromadb.utils.embedding_functions")
@@ -284,6 +287,29 @@ def test_persistent_builds_cpu_cosine_collection_without_real_dependencies(tmp_p
         "embedding_function": created["embedding_instance"],
         "metadata": {"hnsw:space": "cosine", "xrag:embedding_model": "模型"},
     }
+
+    store.close()
+    store.close()
+    assert created["client_closed"] == 1
+
+
+def test_close_is_idempotent_and_injected_collection_needs_no_client():
+    VectorStore(FakeCollection()).close()
+
+    class Client:
+        def __init__(self) -> None:
+            self.closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+
+    client = Client()
+    store = VectorStore(FakeCollection(), client=client)
+
+    store.close()
+    store.close()
+
+    assert client.closed == 1
 
 
 def test_persistent_wraps_dependency_failure(tmp_path, monkeypatch):
@@ -313,6 +339,8 @@ def test_persistent_wraps_and_chains_initialization_failure(tmp_path, monkeypatc
 
 
 def test_persistent_rejects_collection_bound_to_different_model(tmp_path, monkeypatch):
+    closed = 0
+
     class FakeEmbeddingFunction:
         def __init__(self, **kwargs):
             pass
@@ -326,6 +354,10 @@ def test_persistent_rejects_collection_bound_to_different_model(tmp_path, monkey
                 metadata={"hnsw:space": "cosine", "xrag:embedding_model": "old-model"}
             )
 
+        def close(self):
+            nonlocal closed
+            closed += 1
+
     chromadb = types.ModuleType("chromadb")
     chromadb.PersistentClient = FakeClient
     embedding_functions = types.ModuleType("chromadb.utils.embedding_functions")
@@ -335,3 +367,4 @@ def test_persistent_rejects_collection_bound_to_different_model(tmp_path, monkey
 
     with pytest.raises(RuntimeError, match="rebuild/reindex required"):
         VectorStore.persistent(tmp_path / "db", "new-model")
+    assert closed == 1

@@ -53,6 +53,20 @@ def build_service(root: Path) -> XragService:
     return XragService(config, OpenCLIClient(), markdown, vectors)
 
 
+def build_rebuild_service(root: Path) -> XragService:
+    config = load_config(root.resolve())
+    markdown = MarkdownStore(config.markdown_dir)
+    return XragService(
+        config,
+        OpenCLIClient(),
+        markdown,
+        None,
+        rebuild_factory=lambda path: VectorStore.persistent(
+            path, config.embedding_model
+        ),
+    )
+
+
 def _service(ctx: typer.Context) -> XragService:
     return build_service(ctx.obj)
 
@@ -154,7 +168,7 @@ def status(ctx: typer.Context) -> None:
 
 @app.command()
 def rebuild(ctx: typer.Context) -> None:
-    _print_json(_run(lambda: _service(ctx).rebuild()))
+    _print_json(_run(lambda: build_rebuild_service(ctx.obj).rebuild()))
 
 
 def _print_json(value: Any) -> None:

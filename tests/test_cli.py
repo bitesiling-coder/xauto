@@ -157,6 +157,7 @@ def test_search_reports_no_results(monkeypatch) -> None:
 def test_import_status_and_rebuild_emit_unicode_json(monkeypatch, tmp_path: Path) -> None:
     service = FakeService()
     install_fake(monkeypatch, service)
+    monkeypatch.setattr(cli, "build_rebuild_service", lambda root: service)
     source = tmp_path / "输入.json"
     source.write_text("[]", encoding="utf-8")
 
@@ -169,6 +170,58 @@ def test_import_status_and_rebuild_emit_unicode_json(monkeypatch, tmp_path: Path
     assert "中文" in status.stdout and "\\u4e2d" not in status.stdout
     assert json.loads(rebuilt.stdout) == {"documents": 2, "chunks": 5, "errors": 0}
     assert service.calls[0] == ("import", source)
+
+
+def test_rebuild_builder_defers_chroma_open_and_factory_uses_only_staging(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from xrag.config import AppConfig
+    from xrag.markdown_store import MarkdownStore
+    from xrag.models import Post
+
+    configuration = AppConfig(
+        tmp_path.resolve(), False, "03:00", "UTC", 7, 0, ("AI",), "configured-model"
+    )
+    markdown = MarkdownStore(configuration.markdown_dir)
+    markdown.upsert(
+        Post("one", "Ada", "body", "2026-08-09T00:00:00Z", "https://x.com/one")
+    )
+    calls: list[tuple[Path, str]] = []
+
+    class Store:
+        def __init__(self, path: Path) -> None:
+            self.path = path
+            self.total = 0
+
+        def index_post(self, item: object, path: Path) -> int:
+            self.total += 1
+            return 1
+
+        def count(self) -> int:
+            return self.total
+
+        def close(self) -> None:
+            pass
+
+    def persistent(path: Path, model: str) -> Store:
+        path = Path(path)
+        calls.append((path, model))
+        assert path != configuration.chroma_dir
+        (path / "fresh").write_text("index", encoding="utf-8")
+        return Store(path)
+
+    monkeypatch.setattr(cli, "load_config", lambda root: configuration)
+    monkeypatch.setattr(cli.VectorStore, "persistent", persistent)
+
+    service = cli.build_rebuild_service(tmp_path)
+    assert calls == []
+
+    assert service.rebuild() == {"documents": 1, "chunks": 1, "errors": 0}
+    assert len(calls) == 1
+    staging, model = calls[0]
+    assert staging.parent == configuration.chroma_dir.parent
+    assert staging.name.startswith(".xrag-chroma-staging-")
+    assert model == "configured-model"
 
 
 def test_operational_error_is_redacted_and_has_no_traceback(monkeypatch) -> None:

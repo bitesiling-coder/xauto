@@ -10,8 +10,17 @@ from .models import Post, SearchHit
 
 
 class VectorStore:
-    def __init__(self, collection: Any, *, max_chars: int = 500, overlap: int = 80) -> None:
+    def __init__(
+        self,
+        collection: Any,
+        *,
+        client: Any | None = None,
+        max_chars: int = 500,
+        overlap: int = 80,
+    ) -> None:
         self.collection = collection
+        self._client = client
+        self._closed = False
         self.max_chars = max_chars
         self.overlap = overlap
 
@@ -19,6 +28,7 @@ class VectorStore:
     def persistent(cls, path: Path, model_name: str) -> "VectorStore":
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
+        client: Any | None = None
         try:
             import chromadb
             from chromadb.utils.embedding_functions import (
@@ -49,11 +59,25 @@ class VectorStore:
                     "rebuild/reindex required"
                 )
         except Exception as exc:
+            close = getattr(client, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
             raise RuntimeError(
                 f"Failed to initialize persistent Chroma vector store at {path} "
                 f"with model {model_name!r}: {exc}"
             ) from exc
-        return cls(collection)
+        return cls(collection, client=client)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        close = getattr(self._client, "close", None)
+        if callable(close):
+            close()
 
     def index_post(self, post: Post, markdown_path: Path) -> int:
         chunks = chunk_text(post.text, self.max_chars, self.overlap)
