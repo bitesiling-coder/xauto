@@ -72,13 +72,13 @@ def test_parse_search_yaml_skips_malformed_rows_and_uses_fallbacks() -> None:
 def test_parse_search_yaml_reports_safe_diagnostics_for_each_malformed_row() -> None:
     batch = parse_search_yaml_with_diagnostics(
         """
-- id: valid
+- id: "123"
   text: safe text
 - RECOGNIZABLE NONMAPPING SECRET
 - text: RECOGNIZABLE MISSING ID BODY
 - id: []
   text: RECOGNIZABLE INVALID ID BODY
-- id: blank-text-id
+- id: "456"
   text: "   "
   body: RECOGNIZABLE ARBITRARY VALUE
 """,
@@ -86,18 +86,54 @@ def test_parse_search_yaml_reports_safe_diagnostics_for_each_malformed_row() -> 
     )
 
     assert isinstance(batch, SearchBatch)
-    assert tuple(item.id for item in batch.posts) == ("valid",)
+    assert tuple(item.id for item in batch.posts) == ("123",)
     assert batch.rejections == (
         SearchRejection(1, "row[1]", "row is not a mapping"),
         SearchRejection(2, "row[2]", "missing or invalid id"),
         SearchRejection(3, "row[3]", "missing or invalid id"),
-        SearchRejection(4, "blank-text-id", "missing or blank text"),
+        SearchRejection(4, "456", "missing or blank text"),
     )
     diagnostics = repr(batch.rejections)
     assert "RECOGNIZABLE" not in diagnostics
     assert "BODY" not in diagnostics
     assert "SECRET" not in diagnostics
     assert "ARBITRARY" not in diagnostics
+
+
+def test_parse_search_yaml_rejects_non_decimal_ids_without_exposing_them() -> None:
+    batch = parse_search_yaml_with_diagnostics(
+        """
+- id: "auth_token=TOPSECRET RECOGNIZABLE BODY"
+  text: safe
+- id: -1
+  text: safe
+- id: true
+  text: safe
+- id: "１２３"
+  text: safe
+- id: " 123 "
+  text: safe
+- id: "00123"
+  text: leading zeroes remain valid
+- id: 0
+  text: integer zero remains valid
+""",
+        "AI",
+    )
+
+    assert tuple(item.id for item in batch.posts) == ("00123", "0")
+    assert batch.rejections == (
+        SearchRejection(0, "row[0]", "missing or invalid id"),
+        SearchRejection(1, "row[1]", "missing or invalid id"),
+        SearchRejection(2, "row[2]", "missing or invalid id"),
+        SearchRejection(3, "row[3]", "missing or invalid id"),
+        SearchRejection(4, "row[4]", "missing or invalid id"),
+    )
+    diagnostics = repr(batch.rejections)
+    assert "TOPSECRET" not in diagnostics
+    assert "RECOGNIZABLE" not in diagnostics
+    assert "BODY" not in diagnostics
+    assert "auth_token" not in diagnostics
 
 
 def test_parse_search_yaml_rejects_a_non_list_root() -> None:
@@ -129,18 +165,18 @@ def test_client_search_and_search_batch_each_use_one_subprocess_invocation() -> 
         return subprocess.CompletedProcess(
             command,
             0,
-            stdout="- id: valid\n  text: okay\n- id: rejected\n",
+            stdout='- id: "123"\n  text: okay\n- id: "456"\n',
             stderr="",
         )
 
     client = OpenCLIClient(run=run)
-    assert [item.id for item in client.search("AI", 2)] == ["valid"]
+    assert [item.id for item in client.search("AI", 2)] == ["123"]
     assert len(calls) == 1
 
     batch = client.search_batch("GPU", 3)
-    assert [item.id for item in batch.posts] == ["valid"]
+    assert [item.id for item in batch.posts] == ["123"]
     assert batch.rejections == (
-        SearchRejection(1, "rejected", "missing or blank text"),
+        SearchRejection(1, "456", "missing or blank text"),
     )
     assert len(calls) == 2
 

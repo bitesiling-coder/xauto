@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from xrag.config import AppConfig
 from xrag.markdown_store import MarkdownStore
 from xrag.models import Post
-from xrag.opencli import OpenCLIError, SearchBatch, SearchRejection
+from xrag.opencli import OpenCLIClient, OpenCLIError, SearchBatch, SearchRejection
 import xrag.service as service_module
 from xrag.service import XragService
 
@@ -178,6 +179,88 @@ def test_collect_persists_sanitized_failed_run_before_reraising_search_error(
     assert "TOKEN" not in error_log
     assert "RECOGNIZABLE" not in error_log
     assert "BODY" not in error_log
+
+
+def test_collect_logs_only_row_index_for_a_rejected_secret_bearing_id(
+    tmp_path: Path,
+) -> None:
+    payload = """
+- id: "auth_token=TOPSECRET RECOGNIZABLE BODY"
+  text: safe rejected text
+- id: "123"
+  text: safe valid text
+"""
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=payload, stderr="")
+
+    vectors = Vectors()
+    service = XragService(
+        config(tmp_path),
+        OpenCLIClient(run=run),
+        MarkdownStore(tmp_path / "data/markdown"),
+        vectors,
+    )
+
+    assert service.collect("AI") == {
+        "found": 2,
+        "stored": 1,
+        "chunks": 2,
+        "errors": 1,
+    }
+    assert vectors.indexed == ["123"]
+    assert sorted(path.name for path in service.markdown.directory.glob("*.md")) == [
+        "123.md"
+    ]
+    error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "row[0]" in error_log
+    assert "missing or invalid id" in error_log
+    assert "TOPSECRET" not in error_log
+    assert "RECOGNIZABLE" not in error_log
+    assert "BODY" not in error_log
+    assert "auth_token" not in error_log
+
+
+@pytest.mark.parametrize("method_name", ["search_batch", "search"])
+@pytest.mark.parametrize(
+    "failure",
+    [KeyboardInterrupt(), SystemExit(17)],
+    ids=["keyboard-interrupt", "system-exit"],
+)
+def test_collect_does_not_persist_failure_for_base_exceptions_from_search(
+    tmp_path: Path, method_name: str, failure: BaseException
+) -> None:
+    class InterruptingOpenCLI:
+        def search_batch(self, keyword: str, limit: int) -> SearchBatch:
+            if method_name == "search_batch":
+                raise failure
+            return SearchBatch((), ())
+
+        def search(self, keyword: str, limit: int) -> list[Post]:
+            raise failure
+
+    client: object
+    if method_name == "search_batch":
+        client = InterruptingOpenCLI()
+    else:
+        class LegacyInterruptingOpenCLI:
+            def search(self, keyword: str, limit: int) -> list[Post]:
+                raise failure
+
+        client = LegacyInterruptingOpenCLI()
+
+    vectors = Vectors()
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    service = XragService(config(tmp_path), client, markdown, vectors)
+
+    with pytest.raises(type(failure)) as raised:
+        service.collect("AI")
+
+    assert raised.value is failure
+    assert not markdown.directory.exists()
+    assert vectors.indexed == []
+    assert not (tmp_path / "logs/last-run.json").exists()
+    assert not (tmp_path / "logs/errors.jsonl").exists()
 
 
 def test_collect_all_preserves_keyword_order_and_sleeps_only_between(tmp_path: Path) -> None:

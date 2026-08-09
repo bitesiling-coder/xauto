@@ -121,10 +121,10 @@ def test_fixture_round_trips_to_canonical_markdown_and_rebuilds_offline(tmp_path
 
 def test_opencli_secrets_are_not_persisted_to_markdown(tmp_path: Path) -> None:
     payload = """
-- id: secret-proof
+- id: "123456"
   author: example
   text: safe public post
-  url: https://x.com/example/status/secret-proof
+  url: https://x.com/example/status/123456
   auth_token: AUTH_VALUE_MUST_NOT_PERSIST
   ct0: CT0_VALUE_MUST_NOT_PERSIST
   api_key: API_VALUE_MUST_NOT_PERSIST

@@ -134,8 +134,14 @@ def _string(value: object) -> str:
 
 def _identifier(value: object) -> str:
     if isinstance(value, str):
-        return value.strip()
-    return str(value) if type(value) is int else ""
+        return (
+            value
+            if value and all("0" <= character <= "9" for character in value)
+            else ""
+        )
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return str(value)
+    return ""
 
 
 def _timestamp(value: object) -> str:
