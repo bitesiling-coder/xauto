@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import date, datetime
 import subprocess
 
@@ -13,6 +14,19 @@ class OpenCLIError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class SearchRejection:
+    index: int
+    identifier: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SearchBatch:
+    posts: tuple[Post, ...]
+    rejections: tuple[SearchRejection, ...]
+
+
 class OpenCLIClient:
     def __init__(
         self,
@@ -23,6 +37,9 @@ class OpenCLIClient:
         self._timeout = timeout
 
     def search(self, keyword: str, limit: int) -> list[Post]:
+        return list(self.search_batch(keyword, limit).posts)
+
+    def search_batch(self, keyword: str, limit: int) -> SearchBatch:
         command = [
             "opencli",
             "twitter",
@@ -47,10 +64,14 @@ class OpenCLIClient:
         if result.returncode != 0:
             message = result.stderr or result.stdout or "opencli search failed"
             raise OpenCLIError(message.strip())
-        return parse_search_yaml(result.stdout, keyword)
+        return parse_search_yaml_with_diagnostics(result.stdout, keyword)
 
 
 def parse_search_yaml(payload: str, keyword: str) -> list[Post]:
+    return list(parse_search_yaml_with_diagnostics(payload, keyword).posts)
+
+
+def parse_search_yaml_with_diagnostics(payload: str, keyword: str) -> SearchBatch:
     try:
         rows = yaml.safe_load(payload)
     except yaml.YAMLError as error:
@@ -60,16 +81,32 @@ def parse_search_yaml(payload: str, keyword: str) -> list[Post]:
         raise OpenCLIError("OpenCLI search result must be a list")
 
     posts: list[Post] = []
-    for row in rows:
-        if not isinstance(row, dict):
+    rejections: list[SearchRejection] = []
+    for index, row in enumerate(rows):
+        fallback = f"row[{index}]"
+        if not isinstance(row, Mapping):
+            rejections.append(
+                SearchRejection(index, fallback, "row is not a mapping")
+            )
+            continue
+        post_id = _identifier(row.get("id"))
+        if not post_id:
+            rejections.append(
+                SearchRejection(index, fallback, "missing or invalid id")
+            )
+            continue
+        if not _string(row.get("text")):
+            rejections.append(
+                SearchRejection(index, post_id, "missing or blank text")
+            )
             continue
         post = _normalize_post(row, keyword)
-        if post is not None:
-            posts.append(post)
-    return posts
+        assert post is not None
+        posts.append(post)
+    return SearchBatch(tuple(posts), tuple(rejections))
 
 
-def _normalize_post(row: dict[object, object], keyword: str) -> Post | None:
+def _normalize_post(row: Mapping[object, object], keyword: str) -> Post | None:
     post_id = _identifier(row.get("id"))
     text = _string(row.get("text"))
     if not post_id or not text:

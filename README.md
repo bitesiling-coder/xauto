@@ -72,7 +72,7 @@ xrag --root . rebuild
 - `collect` 输出 `found/stored/chunks/errors`；`collect --all` 每个关键词一行。
 - `import`、`status` 和 `rebuild` 输出 JSON。`search` 输出排名、分数、作者、时间、文本、URL 和 Markdown 路径；无命中时输出 `No results found.`。
 - `data/markdown/` 是可读、可备份的权威帖子库；`data/imports/` 是建议的待导入目录；`data/chroma/` 是可丢弃索引。
-- `logs/last-run.json` 保存最近一次 collect/import/rebuild 摘要，`logs/errors.jsonl` 保存单项错误，`logs/scheduler.log` 接收计划任务的标准输出和错误。
+- `logs/last-run.json` 保存最近一次 collect/import/rebuild 摘要；OpenCLI 搜索失败时会记录该关键词、零写入计数和 `outcome: failed`。OpenCLI 返回的畸形行计入 `found/errors` 并以脱敏诊断写入 `logs/errors.jsonl`，不会生成 Markdown 或进入向量索引。`logs/scheduler.log` 接收计划任务的标准输出和错误。
 
 ## 导入格式
 

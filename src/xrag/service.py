@@ -67,9 +67,34 @@ class XragService:
 
     def collect(self, keyword: str, limit: int | None = None) -> dict[str, int]:
         effective_limit = self.config.limit_per_keyword if limit is None else limit
-        posts = self.opencli.search(keyword, effective_limit)
-        counts = {"found": len(posts), "stored": 0, "chunks": 0, "errors": 0}
+        try:
+            search_batch = getattr(self.opencli, "search_batch", None)
+            if callable(search_batch):
+                batch = search_batch(keyword, effective_limit)
+                posts = batch.posts
+                rejections = batch.rejections
+            else:
+                posts = self.opencli.search(keyword, effective_limit)
+                rejections = ()
+        except Exception as error:
+            self._record_collect_failure(keyword, error)
+            raise
+
+        counts = {
+            "found": len(posts) + len(rejections),
+            "stored": 0,
+            "chunks": 0,
+            "errors": len(rejections),
+        }
         with writer_lock(self.config.root):
+            for rejection in rejections:
+                self._log_error(
+                    "collect",
+                    rejection.identifier,
+                    ValueError(rejection.reason),
+                    fixed_message=rejection.reason,
+                    error_name="SearchRejection",
+                )
             with self._vector_session() as vectors:
                 for item in posts:
                     try:
@@ -94,6 +119,28 @@ class XragService:
             if index + 1 < len(self.config.keywords):
                 self._sleep(self.config.delay_seconds)
         return results
+
+    def _record_collect_failure(self, keyword: str, error: Exception) -> None:
+        counts = {"found": 0, "stored": 0, "chunks": 0, "errors": 1}
+        try:
+            with writer_lock(self.config.root):
+                try:
+                    self._write_last_run(
+                        "collect",
+                        counts,
+                        keyword=keyword,
+                        outcome="failed",
+                    )
+                except Exception:
+                    pass
+                self._log_error(
+                    "collect",
+                    keyword,
+                    error,
+                    fixed_message="search failed",
+                )
+        except Exception:
+            pass
 
     def import_path(self, source: Path) -> dict[str, int]:
         source = Path(source)
@@ -351,18 +398,27 @@ class XragService:
         self._write_atomic(self.config.log_dir / "last-run.json", _json_line(record))
 
     def _log_error(
-        self, operation: str, source: str, error: Exception, *, sensitive: str = ""
+        self,
+        operation: str,
+        source: str,
+        error: Exception,
+        *,
+        sensitive: str = "",
+        fixed_message: str | None = None,
+        error_name: str | None = None,
     ) -> None:
         raw_message = str(error)
         message = (
-            "post processing failed"
+            fixed_message
+            if fixed_message is not None
+            else "post processing failed"
             if sensitive
             else _redact(raw_message.splitlines()[0] if raw_message else "")
         )
         record = {
             "operation": operation,
             "source": _redact(source)[:_MAX_ERROR_LENGTH],
-            "error": error.__class__.__name__,
+            "error": error_name or error.__class__.__name__,
             "message": message[:_MAX_ERROR_LENGTH],
         }
         path = self.config.log_dir / "errors.jsonl"

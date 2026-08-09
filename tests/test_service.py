@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from xrag.config import AppConfig
 from xrag.markdown_store import MarkdownStore
 from xrag.models import Post
+from xrag.opencli import OpenCLIError, SearchBatch, SearchRejection
 import xrag.service as service_module
 from xrag.service import XragService
 
@@ -28,6 +29,16 @@ class OpenCLI:
     def search(self, keyword: str, limit: int) -> list[Post]:
         self.calls.append((keyword, limit))
         return self.posts
+
+
+class DiagnosticOpenCLI:
+    def __init__(self, batch: SearchBatch) -> None:
+        self.batch = batch
+        self.calls: list[tuple[str, int]] = []
+
+    def search_batch(self, keyword: str, limit: int) -> SearchBatch:
+        self.calls.append((keyword, limit))
+        return self.batch
 
 
 class Vectors:
@@ -95,6 +106,80 @@ def test_collect_stores_before_indexing_continues_after_index_error_and_writes_s
     assert "RECOGNIZABLE" not in errors
 
 
+def test_collect_counts_and_logs_rejected_rows_without_storing_or_indexing_them(
+    tmp_path: Path,
+) -> None:
+    client = DiagnosticOpenCLI(
+        SearchBatch(
+            posts=(post("valid"),),
+            rejections=(
+                SearchRejection(1, "rejected-id", "missing or blank text"),
+            ),
+        )
+    )
+    vectors = Vectors()
+    service = XragService(
+        config(tmp_path), client, MarkdownStore(tmp_path / "data/markdown"), vectors
+    )
+
+    result = service.collect("AI")
+
+    assert result == {"found": 2, "stored": 1, "chunks": 2, "errors": 1}
+    assert client.calls == [("AI", 7)]
+    assert vectors.indexed == ["valid"]
+    assert sorted(path.name for path in service.markdown.directory.glob("*.md")) == [
+        "valid.md"
+    ]
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "rejected-id" in errors
+    assert "missing or blank text" in errors
+    assert "body" not in errors
+
+
+def test_collect_persists_sanitized_failed_run_before_reraising_search_error(
+    tmp_path: Path,
+) -> None:
+    failure = OpenCLIError(
+        "request failed auth_token=TOKEN RECOGNIZABLE RESPONSE BODY"
+    )
+
+    class FailingOpenCLI:
+        def search(self, keyword: str, limit: int) -> list[Post]:
+            raise failure
+
+    vectors = Vectors()
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    service = XragService(
+        config(tmp_path),
+        FailingOpenCLI(),
+        markdown,
+        vectors,
+        clock=lambda: "2026-08-09T12:00:00Z",
+    )
+
+    with pytest.raises(OpenCLIError) as raised:
+        service.collect("later-keyword")
+
+    assert raised.value is failure
+    assert not markdown.directory.exists()
+    assert vectors.indexed == []
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run == {
+        "operation": "collect",
+        "time": "2026-08-09T12:00:00Z",
+        "keyword": "later-keyword",
+        "outcome": "failed",
+        "counts": {"found": 0, "stored": 0, "chunks": 0, "errors": 1},
+    }
+    error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "later-keyword" in error_log
+    assert "OpenCLIError" in error_log
+    assert "search failed" in error_log
+    assert "TOKEN" not in error_log
+    assert "RECOGNIZABLE" not in error_log
+    assert "BODY" not in error_log
+
+
 def test_collect_all_preserves_keyword_order_and_sleeps_only_between(tmp_path: Path) -> None:
     client = OpenCLI([])
     sleeps: list[int] = []
@@ -105,6 +190,51 @@ def test_collect_all_preserves_keyword_order_and_sleeps_only_between(tmp_path: P
     assert [keyword for keyword, _ in results] == ["one", "two", "three"]
     assert client.calls == [("one", 7), ("two", 7), ("three", 7)]
     assert sleeps == [3, 3]
+
+
+def test_collect_all_records_later_failure_and_does_not_sleep_or_continue(
+    tmp_path: Path,
+) -> None:
+    failure = OpenCLIError("second failed api_key=SECRET")
+
+    class SequentialOpenCLI:
+        calls: list[tuple[str, int]]
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        def search(self, keyword: str, limit: int) -> list[Post]:
+            self.calls.append((keyword, limit))
+            if keyword == "two":
+                raise failure
+            return []
+
+    client = SequentialOpenCLI()
+    sleeps: list[int] = []
+    service = XragService(
+        config(tmp_path, ("one", "two", "three")),
+        client,
+        MarkdownStore(tmp_path / "md"),
+        Vectors(),
+        sleep=sleeps.append,
+        clock=lambda: "2026-08-09T12:00:00Z",
+    )
+
+    with pytest.raises(OpenCLIError) as raised:
+        service.collect_all()
+
+    assert raised.value is failure
+    assert client.calls == [("one", 7), ("two", 7)]
+    assert sleeps == [3]
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run["keyword"] == "two"
+    assert last_run["outcome"] == "failed"
+    assert last_run["counts"] == {
+        "found": 0,
+        "stored": 0,
+        "chunks": 0,
+        "errors": 1,
+    }
 
 
 def test_collect_preserves_an_explicit_zero_limit(tmp_path: Path) -> None:
@@ -136,6 +266,34 @@ def test_error_log_failure_is_best_effort_and_does_not_stop_later_posts(
     assert service.collect("AI") == {"found": 2, "stored": 2, "chunks": 2, "errors": 1}
     assert service.append_attempts == 1
     assert vectors.indexed == ["bad", "good"]
+
+
+def test_error_log_failure_does_not_mask_original_search_exception(
+    tmp_path: Path,
+) -> None:
+    failure = OpenCLIError("auth_token=SECRET")
+
+    class FailingOpenCLI:
+        def search(self, keyword: str, limit: int) -> list[Post]:
+            raise failure
+
+    class FailingLogService(XragService):
+        def _append_error(self, path: Path, line: str) -> None:
+            raise OSError("log unavailable")
+
+    service = FailingLogService(
+        config(tmp_path),
+        FailingOpenCLI(),
+        MarkdownStore(tmp_path / "data/markdown"),
+        Vectors(),
+    )
+
+    with pytest.raises(OpenCLIError) as raised:
+        service.collect("AI")
+
+    assert raised.value is failure
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run["outcome"] == "failed"
 
 
 def test_error_log_append_does_not_read_or_erase_existing_history(

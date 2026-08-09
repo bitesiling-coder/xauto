@@ -8,7 +8,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from xrag.opencli import OpenCLIClient, OpenCLIError, parse_search_yaml
+from xrag.opencli import (
+    OpenCLIClient,
+    OpenCLIError,
+    SearchBatch,
+    SearchRejection,
+    parse_search_yaml,
+    parse_search_yaml_with_diagnostics,
+)
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "opencli-search.yaml"
@@ -62,6 +69,37 @@ def test_parse_search_yaml_skips_malformed_rows_and_uses_fallbacks() -> None:
     assert post.source_keywords == ("AI",)
 
 
+def test_parse_search_yaml_reports_safe_diagnostics_for_each_malformed_row() -> None:
+    batch = parse_search_yaml_with_diagnostics(
+        """
+- id: valid
+  text: safe text
+- RECOGNIZABLE NONMAPPING SECRET
+- text: RECOGNIZABLE MISSING ID BODY
+- id: []
+  text: RECOGNIZABLE INVALID ID BODY
+- id: blank-text-id
+  text: "   "
+  body: RECOGNIZABLE ARBITRARY VALUE
+""",
+        "AI",
+    )
+
+    assert isinstance(batch, SearchBatch)
+    assert tuple(item.id for item in batch.posts) == ("valid",)
+    assert batch.rejections == (
+        SearchRejection(1, "row[1]", "row is not a mapping"),
+        SearchRejection(2, "row[2]", "missing or invalid id"),
+        SearchRejection(3, "row[3]", "missing or invalid id"),
+        SearchRejection(4, "blank-text-id", "missing or blank text"),
+    )
+    diagnostics = repr(batch.rejections)
+    assert "RECOGNIZABLE" not in diagnostics
+    assert "BODY" not in diagnostics
+    assert "SECRET" not in diagnostics
+    assert "ARBITRARY" not in diagnostics
+
+
 def test_parse_search_yaml_rejects_a_non_list_root() -> None:
     with pytest.raises(OpenCLIError, match="list"):
         parse_search_yaml("id: 42", "AI")
@@ -81,6 +119,30 @@ def test_client_runs_the_expected_command_and_returns_empty_results() -> None:
             {"capture_output": True, "text": True, "encoding": "utf-8", "timeout": 180, "check": False},
         )
     ]
+
+
+def test_client_search_and_search_batch_each_use_one_subprocess_invocation() -> None:
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="- id: valid\n  text: okay\n- id: rejected\n",
+            stderr="",
+        )
+
+    client = OpenCLIClient(run=run)
+    assert [item.id for item in client.search("AI", 2)] == ["valid"]
+    assert len(calls) == 1
+
+    batch = client.search_batch("GPU", 3)
+    assert [item.id for item in batch.posts] == ["valid"]
+    assert batch.rejections == (
+        SearchRejection(1, "rejected", "missing or blank text"),
+    )
+    assert len(calls) == 2
 
 
 def test_client_raises_stderr_for_nonzero_results() -> None:
