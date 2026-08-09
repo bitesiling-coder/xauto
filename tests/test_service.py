@@ -116,6 +116,52 @@ def test_collect_preserves_an_explicit_zero_limit(tmp_path: Path) -> None:
     assert client.calls == [("AI", 0)]
 
 
+@pytest.mark.parametrize("failure", [OSError("disk unavailable"), RuntimeError("append failed")])
+def test_error_log_failure_is_best_effort_and_does_not_stop_later_posts(
+    tmp_path: Path, failure: Exception
+) -> None:
+    class FailingLogService(XragService):
+        append_attempts = 0
+
+        def _append_error(self, path: Path, line: str) -> None:
+            self.append_attempts += 1
+            raise failure
+
+    vectors = Vectors({"bad"})
+    service = FailingLogService(
+        config(tmp_path), OpenCLI([post("bad"), post("good")]),
+        MarkdownStore(tmp_path / "data/markdown"), vectors,
+    )
+
+    assert service.collect("AI") == {"found": 2, "stored": 2, "chunks": 2, "errors": 1}
+    assert service.append_attempts == 1
+    assert vectors.indexed == ["bad", "good"]
+
+
+def test_error_log_append_does_not_read_or_erase_existing_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log_path = tmp_path / "logs/errors.jsonl"
+    log_path.parent.mkdir(parents=True)
+    log_path.write_text('{"old":"history"}\n', encoding="utf-8", newline="\n")
+    original_read_text = Path.read_text
+
+    def reject_error_log_read(path: Path, *args: object, **kwargs: object) -> str:
+        if path == log_path:
+            raise RuntimeError("errors.jsonl must not be read before append")
+        return original_read_text(path, *args, **kwargs)
+
+    vectors = Vectors({"bad"})
+    service = make_service(tmp_path, OpenCLI([post("bad")]), vectors)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "read_text", reject_error_log_read)
+        service.collect("AI")
+
+    contents = log_path.read_text(encoding="utf-8")
+    assert contents.startswith('{"old":"history"}\n')
+    assert contents.count("\n") == 2
+
+
 def test_import_directory_sorts_files_rejects_partial_bad_file_and_skips_canonical(tmp_path: Path) -> None:
     source = tmp_path
     (source / "b.json").write_text('[{"id":"b","text":"B"}]', encoding="utf-8")
@@ -144,6 +190,24 @@ def test_import_directory_uses_path_sort_order(tmp_path: Path) -> None:
     service.import_path(tmp_path)
 
     assert vectors.indexed == ["upper", "lower"]
+
+
+def test_import_uses_injected_markdown_directory_for_exclusion_and_rejects_it_as_file(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "valid.json").write_text('{"id":"valid","text":"okay"}', encoding="utf-8")
+    canonical = source / "custom-canonical"
+    markdown = MarkdownStore(canonical)
+    generated = markdown.upsert(post("generated"))
+    vectors = Vectors()
+    service = XragService(config(tmp_path), OpenCLI(), markdown, vectors)
+
+    assert service.import_path(source) == {"files": 1, "imported": 1, "chunks": 2, "errors": 0}
+    assert vectors.indexed == ["valid"]
+    with pytest.raises(ValueError, match="canonical Markdown"):
+        service.import_path(generated)
 
 
 def test_import_single_file_and_clear_validation_errors(tmp_path: Path) -> None:
@@ -198,6 +262,31 @@ def test_import_error_log_removes_secrets_and_body_from_multiline_parser_error(
     assert "RECOGNIZABLE BODY" not in errors
 
 
+@pytest.mark.parametrize(
+    "message, secret",
+    [
+        ("api_key=APISECRET", "APISECRET"),
+        ('"api-key": "DASHSECRET"', "DASHSECRET"),
+        ("password='PASSWORDSECRET'", "PASSWORDSECRET"),
+        ("passwd: PASSWDSECRET", "PASSWDSECRET"),
+        ('"client_secret":"CLIENTSECRET"', "CLIENTSECRET"),
+        ("access_token=ACCESSSECRET", "ACCESSSECRET"),
+        ("refresh_token: 'REFRESHSECRET'", "REFRESHSECRET"),
+        ('"authorization": "Basic AUTHSECRET"', "AUTHSECRET"),
+        ("request rejected: Bearer BEARERSECRET", "BEARERSECRET"),
+        ("authorization: Bearer COMBINEDSECRET", "COMBINEDSECRET"),
+    ],
+)
+def test_non_post_error_summary_scrubs_common_secret_forms(
+    tmp_path: Path, message: str, secret: str
+) -> None:
+    service = make_service(tmp_path, OpenCLI(), Vectors())
+
+    service._log_error("import", "fixture", ValueError(message))
+
+    assert secret not in (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+
+
 def test_rebuild_clears_first_continues_after_document_error_and_preserves_markdown(tmp_path: Path) -> None:
     markdown = MarkdownStore(tmp_path / "data/markdown")
     markdown.upsert(post("a"))
@@ -234,7 +323,13 @@ def test_search_delegates_and_status_handles_empty_valid_and_malformed_last_run(
     service = make_service(tmp_path, OpenCLI(), vectors)
     assert service.search("needle", 4) == ["needle"]
     assert vectors.search_args == ("needle", 4)
-    assert service.status() == {"documents": 0, "chunks": 0, "keywords": 2, "last_run": None}
+    assert service.status() == {
+        "documents": 0,
+        "document_errors": 0,
+        "chunks": 0,
+        "keywords": 2,
+        "last_run": None,
+    }
 
     service.collect("AI")
     assert service.status()["last_run"]["operation"] == "collect"
@@ -242,3 +337,48 @@ def test_search_delegates_and_status_handles_empty_valid_and_malformed_last_run(
     malformed = service.status()
     assert malformed["last_run"] is None
     assert "error" in malformed["last_run_status"].lower()
+
+
+def test_status_counts_malformed_canonical_files_and_reports_document_errors(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    markdown.upsert(post("valid"))
+    (markdown.directory / "broken.md").write_text("not front matter\n", encoding="utf-8")
+    service = XragService(config(tmp_path), OpenCLI(), markdown, Vectors())
+
+    status = service.status()
+
+    assert status["documents"] == 2
+    assert status["document_errors"] == 1
+    assert status["chunks"] == 0
+    assert status["keywords"] == 2
+
+
+def test_collect_writes_last_run_before_releasing_writer_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_active = False
+
+    @contextmanager
+    def tracking_lock(root: Path, timeout: float = 1):
+        nonlocal lock_active
+        lock_active = True
+        try:
+            yield
+        finally:
+            lock_active = False
+
+    class ObservedService(XragService):
+        last_run_lock_states: list[bool] = []
+
+        def _write_last_run(self, operation: str, counts: dict[str, int], **context: str) -> None:
+            self.last_run_lock_states.append(lock_active)
+            super()._write_last_run(operation, counts, **context)
+
+    monkeypatch.setattr(service_module, "writer_lock", tracking_lock)
+    service = ObservedService(
+        config(tmp_path), OpenCLI(), MarkdownStore(tmp_path / "data/markdown"), Vectors()
+    )
+
+    service.collect("AI")
+
+    assert service.last_run_lock_states == [True]

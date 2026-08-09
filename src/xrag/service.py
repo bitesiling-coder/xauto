@@ -19,11 +19,16 @@ from .markdown_store import MarkdownStore
 _IMPORT_EXTENSIONS = {".yaml", ".yml", ".json", ".md"}
 _SECRET = re.compile(
     r'''(?ix)
-    ["']?\b((?:twitter_|x_)?auth[_-]?token|(?:twitter_|x_)?ct0)\b["']?
+    ["']?\b(
+        (?:(?:twitter|x)[_-])?
+        (?:auth[_-]?token|ct0|api[_-]?key|password|passwd|client[_-]?secret|
+           access[_-]?token|refresh[_-]?token|authorization)
+    )\b["']?
     \s*[:=]\s*
     (?:"[^"]*"|'[^']*'|[^\s,;}]+)
     '''
 )
+_BEARER = re.compile(r"(?i)\bBearer\s+[^\s,;}\]]+")
 _MAX_ERROR_LENGTH = 500
 
 
@@ -60,7 +65,7 @@ class XragService:
                     self._log_error(
                         "collect", self._post_id(item), error, sensitive=self._post_text(item)
                     )
-        self._write_last_run("collect", counts, keyword=keyword)
+            self._write_last_run("collect", counts, keyword=keyword)
         return counts
 
     def collect_all(self) -> list[tuple[str, dict[str, int]]]:
@@ -95,7 +100,7 @@ class XragService:
                             "import", f"{path}#{self._post_id(item)}", error,
                             sensitive=self._post_text(item),
                         )
-        self._write_last_run("import", counts)
+            self._write_last_run("import", counts)
         return counts
 
     def search(self, query: str, top: int) -> Any:
@@ -117,12 +122,20 @@ class XragService:
                         "rebuild", str(path), error,
                         sensitive=self._post_text(item),
                     )
-        self._write_last_run("rebuild", counts)
+            self._write_last_run("rebuild", counts)
         return counts
 
     def status(self) -> dict[str, Any]:
+        paths = sorted(self.markdown.directory.glob("*.md"), key=str)
+        document_errors = 0
+        for path in paths:
+            try:
+                self.markdown.read(path)
+            except Exception:
+                document_errors += 1
         result: dict[str, Any] = {
-            "documents": sum(1 for _ in self.markdown.iter_posts()),
+            "documents": len(paths),
+            "document_errors": document_errors,
             "chunks": self.vectors.count(),
             "keywords": len(self.config.keywords),
             "last_run": None,
@@ -141,14 +154,16 @@ class XragService:
     def _import_files(self, source: Path) -> list[Path]:
         if not source.exists():
             raise ValueError(f"Import path does not exist: {source}")
+        canonical = self.markdown.directory.resolve()
         if source.is_file():
             if source.suffix.lower() not in _IMPORT_EXTENSIONS:
                 raise ValueError(f"Unsupported import file type: {source.suffix or '(no extension)'}")
+            if _is_within(source, canonical):
+                raise ValueError(f"Cannot import a canonical Markdown file: {source}")
             return [source]
         if not source.is_dir():
             raise ValueError(f"Import path is not a file or directory: {source}")
 
-        canonical = self.config.markdown_dir.resolve()
         files = [
             path
             for path in source.rglob("*")
@@ -184,10 +199,17 @@ class XragService:
         }
         path = self.config.log_dir / "errors.jsonl"
         try:
-            existing = path.read_text(encoding="utf-8") if path.exists() else ""
-        except (OSError, UnicodeError):
-            existing = ""
-        self._write_atomic(path, existing + _json_line(record))
+            self._append_error(path, _json_line(record))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _append_error(path: Path, line: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open(mode="a", encoding="utf-8", newline="\n") as log_file:
+            log_file.write(line)
+            log_file.flush()
+            os.fsync(log_file.fileno())
 
     def _now(self) -> str:
         value = self._clock()
@@ -240,4 +262,5 @@ def _json_line(value: object) -> str:
 
 
 def _redact(value: str) -> str:
-    return _SECRET.sub(lambda match: f"{match.group(1)}=[REDACTED]", value)
+    redacted = _BEARER.sub("Bearer [REDACTED]", value)
+    return _SECRET.sub(lambda match: f"{match.group(1)}=[REDACTED]", redacted)
