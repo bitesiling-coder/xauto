@@ -550,6 +550,42 @@ def test_authorization_summary_redacts_complete_unquoted_credentials(
     assert all(payload not in error_log for payload in payloads)
 
 
+@pytest.mark.parametrize(
+    "credential, payloads",
+    [
+        ("TWITTER_AUTHORIZATION=Basic LEAKME", ("LEAKME",)),
+        ("X_AUTHORIZATION: Token TOPSECRET", ("TOPSECRET",)),
+        (
+            "TWITTER_AUTHORIZATION: Digest username=alice, response=deadbeef",
+            ("username=alice", "response=deadbeef"),
+        ),
+        (
+            "X_AUTHORIZATION=OAuth oauth_token=OAUTHLEAK, oauth_signature=SIGLEAK",
+            ("OAUTHLEAK", "SIGLEAK"),
+        ),
+        (
+            "TWITTER_AUTHORIZATION: Custom alpha=ONELEAK, beta=TWOLEAK",
+            ("ONELEAK", "TWOLEAK"),
+        ),
+    ],
+)
+def test_prefixed_authorization_is_fully_redacted_in_error_source_and_reason(
+    tmp_path: Path, credential: str, payloads: tuple[str, ...]
+) -> None:
+    service = make_service(tmp_path, OpenCLI(), Vectors())
+
+    service._log_error("import", credential, ValueError(credential))
+
+    [record] = [
+        json.loads(line)
+        for line in (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert record["operation"] == "import"
+    assert record["error"] == "ValueError"
+    assert all(payload not in record["source"] for payload in payloads)
+    assert all(payload not in record["message"] for payload in payloads)
+
+
 def test_rebuild_without_factory_refuses_to_touch_old_index(tmp_path: Path) -> None:
     stable = tmp_path / "data/chroma"
     stable.mkdir(parents=True)

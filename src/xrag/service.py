@@ -33,8 +33,8 @@ _SECRET = re.compile(
 )
 _AUTHORIZATION = re.compile(
     r'''(?ix)
-    ["']?\bauthorization\b["']?\s*[:=]\s*
-    (?:"[^"]*"|'[^']*'|Digest\b[^\r\n;]*|[^\r\n,;]*)
+    ["']?\b(?:(?:twitter|x)[_-])?authorization\b["']?\s*[:=]\s*
+    (?:"[^"]*"|'[^']*'|[^\r\n]*)
     '''
 )
 _BEARER = re.compile(r"(?i)\bBearer\s+[^\s,;}\]]+")
