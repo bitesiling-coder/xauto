@@ -11,7 +11,7 @@ import yaml
 from .models import Post
 
 
-_SAFE_STEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
+_SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 
 def load_posts(path: Path) -> list[Post]:
@@ -27,20 +27,22 @@ def load_posts(path: Path) -> list[Post]:
     else:
         raise ValueError(f"Unsupported import file type: {path.suffix or '(no extension)'}")
 
-    return [_normalize_row(row) for row in _rows(rows)]
+    posts = [_normalize_row(row) for row in _rows(rows)]
+    _validate_post_ids(posts)
+    return posts
 
 
 def _load_yaml(path: Path) -> object:
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as error:
+    except (OSError, RecursionError, yaml.YAMLError) as error:
         raise ValueError(f"Cannot load YAML file {path}: {error}") from error
 
 
 def _load_json(path: Path) -> object:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, RecursionError, json.JSONDecodeError) as error:
         raise ValueError(f"Cannot load JSON file {path}: {error}") from error
 
 
@@ -56,13 +58,13 @@ def _load_markdown(path: Path) -> dict[str, object]:
         raise ValueError(f"Invalid Markdown front matter in {path}: missing closing delimiter")
     try:
         metadata = yaml.safe_load(content[4:end])
-    except yaml.YAMLError as error:
+    except (RecursionError, yaml.YAMLError) as error:
         raise ValueError(f"Invalid Markdown front matter in {path}: {error}") from error
     if not isinstance(metadata, Mapping):
         raise ValueError(f"Invalid Markdown front matter in {path}: expected a mapping")
 
     row = dict(metadata)
-    if "id" not in row and _SAFE_STEM.fullmatch(path.stem):
+    if "id" not in row and _SAFE_ID.fullmatch(path.stem):
         row["id"] = path.stem
     row["text"] = content[end + len("\n---\n") :].strip()
     return row
@@ -99,6 +101,17 @@ def _normalize_row(row: Mapping[object, object]) -> Post:
         source_keywords=_strings(row.get("source_keywords")),
         source_type="import",
     )
+
+
+def _validate_post_ids(posts: list[Post]) -> None:
+    seen: set[str] = set()
+    for post in posts:
+        if not _SAFE_ID.fullmatch(post.id):
+            raise ValueError(f"unsafe post ID: {post.id!r}")
+        folded_id = post.id.casefold()
+        if folded_id in seen:
+            raise ValueError(f"case-insensitive collision for post ID: {post.id!r}")
+        seen.add(folded_id)
 
 
 def _string(value: object) -> str:

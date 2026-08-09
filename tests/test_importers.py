@@ -216,3 +216,50 @@ def test_load_posts_does_not_write_or_recurse(tmp_path: Path) -> None:
     assert source.read_bytes() == before
     with pytest.raises(ValueError, match="Unsupported"):
         load_posts(nested)
+
+
+def test_load_posts_rejects_an_unsafe_id_in_a_batch_before_returning_posts(tmp_path: Path) -> None:
+    path = tmp_path / "posts.yaml"
+    path.write_text(
+        "- id: valid-id\n  text: valid\n- id: ../invalid\n  text: invalid\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsafe post ID"):
+        load_posts(path)
+
+
+def test_load_posts_rejects_casefold_duplicate_ids_in_a_batch(tmp_path: Path) -> None:
+    path = tmp_path / "posts.yaml"
+    path.write_text(
+        "- id: abc\n  text: first\n- id: ABC\n  text: second\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="case-insensitive collision"):
+        load_posts(path)
+
+
+def test_load_posts_wraps_recursion_errors_from_deep_yaml(tmp_path: Path) -> None:
+    depth = sys.getrecursionlimit() + 100
+    path = tmp_path / "deep.yaml"
+    path.write_text("value: " + "[" * depth + "value" + "]" * depth, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot load YAML file") as error:
+        load_posts(path)
+
+    assert isinstance(error.value.__cause__, RecursionError)
+
+
+def test_load_posts_wraps_recursion_errors_from_deep_markdown_front_matter(tmp_path: Path) -> None:
+    depth = sys.getrecursionlimit() + 100
+    path = tmp_path / "deep.md"
+    path.write_text(
+        "---\nvalue: " + "[" * depth + "value" + "]" * depth + "\n---\nbody\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Invalid Markdown front matter.*deep.md") as error:
+        load_posts(path)
+
+    assert isinstance(error.value.__cause__, RecursionError)
