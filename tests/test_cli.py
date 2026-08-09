@@ -197,6 +197,18 @@ def test_help_never_builds_service(monkeypatch) -> None:
         ("TWITTER_CT0: 'twitter-ct0-value'", "twitter-ct0-value"),
         ('"X_AUTH_TOKEN": "x-auth-value"', "x-auth-value"),
         ("X_CT0=x-ct0-value", "x-ct0-value"),
+        ("TWITTER_API_KEY=twitter-api-value", "twitter-api-value"),
+        ('"X_ACCESS_TOKEN": "x-access-value"', "x-access-value"),
+        ("TWITTER_PASSWORD: 'twitter-password-value'", "twitter-password-value"),
+        ("X_REFRESH_TOKEN=x-refresh-value", "x-refresh-value"),
+        ('"TWITTER_CLIENT_SECRET"="twitter-client-value"', "twitter-client-value"),
+        ("X_AUTHORIZATION: Basic prefixed-basic-value", "prefixed-basic-value"),
+        ("Authorization: Bearer bearer-value", "bearer-value"),
+        ("Authorization=Token token-value", "token-value"),
+        (
+            'Authorization: Digest username="user", response="digest-value"',
+            "digest-value",
+        ),
         ("auth_token=plain-auth-value", "plain-auth-value"),
         ('"ct0": "plain-ct0-value"', "plain-ct0-value"),
         ("api_key: api-value", "api-value"),
@@ -287,6 +299,26 @@ def test_module_entrypoint_help_does_not_initialize_model(tmp_path: Path) -> Non
         [sys.executable, "-m", "xrag.cli", "--help"],
         cwd=tmp_path,
         env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "collect" in result.stdout
+    assert "Failed to initialize" not in result.stderr
+
+
+def test_installed_console_entrypoint_help_does_not_initialize_model(tmp_path: Path) -> None:
+    executable_name = "xrag.exe" if os.name == "nt" else "xrag"
+    executable = Path(sys.executable).with_name(executable_name)
+    assert executable.is_file(), f"editable console script is not installed: {executable}"
+
+    result = subprocess.run(
+        [str(executable), "--help"],
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         encoding="utf-8",
