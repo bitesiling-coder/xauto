@@ -17,7 +17,13 @@ from .markdown_store import MarkdownStore
 
 
 _IMPORT_EXTENSIONS = {".yaml", ".yml", ".json", ".md"}
-_SECRET = re.compile(r"(?i)\b(auth_token|ct0)\s*[=:]\s*([^\s,;]+)")
+_SECRET = re.compile(
+    r'''(?ix)
+    ["']?\b((?:twitter_|x_)?auth[_-]?token|(?:twitter_|x_)?ct0)\b["']?
+    \s*[:=]\s*
+    (?:"[^"]*"|'[^']*'|[^\s,;}]+)
+    '''
+)
 _MAX_ERROR_LENGTH = 500
 
 
@@ -99,14 +105,17 @@ class XragService:
         counts = {"documents": 0, "chunks": 0, "errors": 0}
         with writer_lock(self.config.root):
             self.vectors.clear()
-            for path, item in self.markdown.iter_posts():
+            for path in sorted(self.markdown.directory.glob("*.md"), key=str):
                 counts["documents"] += 1
+                item: object | None = None
                 try:
+                    item = self.markdown.read(path)
                     counts["chunks"] += self.vectors.index_post(item, path)
                 except Exception as error:
                     counts["errors"] += 1
                     self._log_error(
-                        "rebuild", self._post_id(item), error, sensitive=self._post_text(item)
+                        "rebuild", str(path), error,
+                        sensitive=self._post_text(item),
                     )
         self._write_last_run("rebuild", counts)
         return counts
@@ -161,7 +170,8 @@ class XragService:
     def _log_error(
         self, operation: str, source: str, error: Exception, *, sensitive: str = ""
     ) -> None:
-        message = _redact(str(error))
+        raw_message = str(error)
+        message = _redact(raw_message.splitlines()[0] if raw_message else "")
         if sensitive:
             message = message.replace(sensitive, "[REDACTED]")
         record = {

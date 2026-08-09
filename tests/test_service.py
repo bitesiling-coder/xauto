@@ -171,6 +171,33 @@ def test_import_last_run_does_not_copy_a_sensitive_source_path(tmp_path: Path) -
     assert "path-secret" not in last_run
 
 
+def test_import_error_log_removes_secrets_and_body_from_multiline_parser_error(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "malformed.yaml"
+    source.write_text(
+        '{"auth_token":"TOKEN","ct0":"COOKIE","TWITTER_AUTH_TOKEN":"ENV_TOKEN",'
+        '"X_CT0":"ENV_COOKIE","body":"RECOGNIZABLE BODY", broken\n',
+        encoding="utf-8",
+    )
+    service = make_service(tmp_path, OpenCLI(), Vectors())
+
+    assert service.import_path(source) == {
+        "files": 1,
+        "imported": 0,
+        "chunks": 0,
+        "errors": 1,
+    }
+
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "ValueError" in errors and "Cannot load YAML" in errors
+    assert "TOKEN" not in errors
+    assert "COOKIE" not in errors
+    assert "ENV_TOKEN" not in errors
+    assert "ENV_COOKIE" not in errors
+    assert "RECOGNIZABLE BODY" not in errors
+
+
 def test_rebuild_clears_first_continues_after_document_error_and_preserves_markdown(tmp_path: Path) -> None:
     markdown = MarkdownStore(tmp_path / "data/markdown")
     markdown.upsert(post("a"))
@@ -182,6 +209,24 @@ def test_rebuild_clears_first_continues_after_document_error_and_preserves_markd
     assert service.rebuild() == {"documents": 2, "chunks": 2, "errors": 1}
     assert vectors.cleared == 1 and vectors.indexed == ["a", "b"]
     assert {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")} == before
+
+
+def test_rebuild_isolates_malformed_markdown_and_continues_in_path_order(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    markdown.upsert(post("a"))
+    malformed = markdown.directory / "b.md"
+    malformed.write_text("not front matter\n", encoding="utf-8")
+    markdown.upsert(post("c"))
+    before = {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")}
+    vectors = Vectors()
+    service = XragService(config(tmp_path), OpenCLI(), markdown, vectors)
+
+    assert service.rebuild() == {"documents": 3, "chunks": 4, "errors": 1}
+    assert vectors.cleared == 1
+    assert vectors.indexed == ["a", "c"]
+    assert {path.name: path.read_bytes() for path in markdown.directory.glob("*.md")} == before
+    error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "b.md" in error_log and "front matter" in error_log
 
 
 def test_search_delegates_and_status_handles_empty_valid_and_malformed_last_run(tmp_path: Path) -> None:
