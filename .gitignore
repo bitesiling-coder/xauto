@@ -1,0 +1,10 @@
+.worktrees/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/markdown/
+data/imports/
+data/chroma/
+logs/
+.xrag.lock
