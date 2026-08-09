@@ -18,8 +18,9 @@ app = typer.Typer(no_args_is_help=True)
 T = TypeVar("T")
 
 _SECRET = re.compile(
-    r"(?i)[\"']?\b(auth[_-]?token|ct0|api[_-]?key|password|passwd|client[_-]?secret|"
-    r"access[_-]?token|refresh[_-]?token|authorization)\b[\"']?\s*[:=]\s*"
+    r"(?i)[\"']?\b((?:(?:twitter|x)[_-])?(?:auth[_-]?token|ct0)|api[_-]?key|"
+    r"password|passwd|client[_-]?secret|access[_-]?token|refresh[_-]?token|"
+    r"authorization)\b[\"']?\s*[:=]\s*"
     r"(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)"
 )
 _AUTHORIZATION = re.compile(

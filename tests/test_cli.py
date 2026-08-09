@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
+import pytest
 from typer.testing import CliRunner
 
 from xrag import cli
@@ -184,3 +188,120 @@ def test_help_never_builds_service(monkeypatch) -> None:
     assert command_help.exit_code == 0
     assert "collect" in root_help.stdout
     assert "--top" in command_help.stdout
+
+
+@pytest.mark.parametrize(
+    ("message", "secret"),
+    [
+        ("TWITTER_AUTH_TOKEN=twitter-auth-value", "twitter-auth-value"),
+        ("TWITTER_CT0: 'twitter-ct0-value'", "twitter-ct0-value"),
+        ('"X_AUTH_TOKEN": "x-auth-value"', "x-auth-value"),
+        ("X_CT0=x-ct0-value", "x-ct0-value"),
+        ("auth_token=plain-auth-value", "plain-auth-value"),
+        ('"ct0": "plain-ct0-value"', "plain-ct0-value"),
+        ("api_key: api-value", "api-value"),
+    ],
+)
+def test_operational_error_redacts_credential_variants(
+    monkeypatch, message: str, secret: str
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "build_service",
+        lambda root: (_ for _ in ()).throw(OpenCLIError(f"browser failed: {message}")),
+    )
+
+    result = runner.invoke(cli.app, ["status"])
+
+    assert result.exit_code == 2
+    assert "Error: browser failed" in result.stderr
+    assert "[REDACTED]" in result.stderr
+    assert secret not in result.output
+    assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize("error_type", [ValueError, RuntimeError, OSError])
+@pytest.mark.parametrize("failure_point", ["build", "service"])
+def test_known_operational_exceptions_exit_cleanly(
+    monkeypatch, error_type: type[Exception], failure_point: str
+) -> None:
+    error = error_type("failed auth_token=never-print-this")
+    if failure_point == "build":
+        monkeypatch.setattr(
+            cli, "build_service", lambda root: (_ for _ in ()).throw(error)
+        )
+    else:
+        service = FakeService()
+        service.status = lambda: (_ for _ in ()).throw(error)
+        install_fake(monkeypatch, service)
+
+    result = runner.invoke(cli.app, ["status"])
+
+    assert result.exit_code == 2
+    assert "Error: failed" in result.stderr
+    assert "[REDACTED]" in result.stderr
+    assert "never-print-this" not in result.output
+    assert "Traceback" not in result.output
+
+
+def test_keyboard_interrupt_is_left_to_click(monkeypatch) -> None:
+    service = FakeService()
+    service.status = lambda: (_ for _ in ()).throw(KeyboardInterrupt())
+    install_fake(monkeypatch, service)
+
+    result = runner.invoke(cli.app, ["status"], catch_exceptions=False)
+
+    assert result.exit_code == 130
+    assert isinstance(result.exception, SystemExit)
+    assert "Error:" not in result.output
+
+
+def test_system_exit_is_not_caught_as_an_operational_error(monkeypatch) -> None:
+    service = FakeService()
+    service.status = lambda: (_ for _ in ()).throw(SystemExit(17))
+    install_fake(monkeypatch, service)
+
+    result = runner.invoke(cli.app, ["status"], catch_exceptions=False)
+
+    assert result.exit_code == 17
+    assert "Error:" not in result.output
+
+
+def test_no_arguments_show_help_without_building_service(monkeypatch) -> None:
+    roots: list[Path] = []
+    monkeypatch.setattr(cli, "build_service", lambda root: roots.append(root))
+
+    result = runner.invoke(cli.app, [])
+
+    assert "Usage:" in result.stdout
+    assert "collect" in result.stdout
+    assert roots == []
+
+
+def test_module_entrypoint_help_does_not_initialize_model(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(project_root / "src")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "xrag.cli", "--help"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "collect" in result.stdout
+    assert "Failed to initialize" not in result.stderr
+
+
+def test_console_entrypoint_targets_typer_app() -> None:
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'xrag = "xrag.cli:app"' in pyproject
