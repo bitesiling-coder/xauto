@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import re
+import tempfile
 
 import yaml
 
@@ -37,6 +39,7 @@ class MarkdownStore:
     def upsert(self, post: Post) -> Path:
         path = self._path_for(post.id)
         self.directory.mkdir(parents=True, exist_ok=True)
+        self._ensure_no_casefold_collision(post.id)
         now = self._clock()
         keywords = post.source_keywords
         collected_at = now
@@ -75,7 +78,7 @@ class MarkdownStore:
         content = "---\n" + yaml.safe_dump(
             metadata, allow_unicode=True, sort_keys=False, default_flow_style=False
         ) + "---\n\n" + normalized.text + "\n"
-        path.write_text(content, encoding="utf-8")
+        self._write_atomic(path, content)
         return path
 
     def read(self, path: Path) -> Post:
@@ -110,6 +113,34 @@ class MarkdownStore:
         if path.resolve().parent != self.directory.resolve():
             raise ValueError(f"unsafe post ID: {post_id!r}")
         return path
+
+    def _ensure_no_casefold_collision(self, post_id: str) -> None:
+        for candidate in self.directory.glob("*.md"):
+            if candidate.stem.casefold() == post_id.casefold() and candidate.stem != post_id:
+                raise ValueError(f"case-insensitive collision for post ID: {post_id!r}")
+
+    def _write_atomic(self, path: Path, content: str) -> None:
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="\n",
+                dir=self.directory,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                temporary_file.write(content)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            os.replace(temporary_path, path)
+            temporary_path = None
+        except BaseException:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+            raise
 
     def _parse(self, path: Path) -> tuple[dict[str, object], str]:
         try:

@@ -7,6 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import xrag.markdown_store as markdown_store
 from xrag.markdown_store import MarkdownStore
 from xrag.models import Post
 
@@ -95,3 +96,50 @@ def test_rejects_unsafe_ids_and_iterates_sorted_or_empty(tmp_path: Path) -> None
     store.upsert(make_post(id="10"))
 
     assert [path.name for path, _ in store.iter_posts()] == ["10.md", "z.md"]
+
+
+def test_failed_update_preserves_original_and_cleans_temporary_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MarkdownStore(tmp_path)
+    path = store.upsert(make_post(text="original"))
+    original = path.read_bytes()
+
+    def fail_replace(source: object, target: object) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(markdown_store.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        store.upsert(make_post(text="replacement"))
+
+    assert path.read_bytes() == original
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_failed_first_write_leaves_no_canonical_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MarkdownStore(tmp_path)
+
+    def fail_replace(source: object, target: object) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(markdown_store.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        store.upsert(make_post())
+
+    assert list(tmp_path.glob("*.md")) == []
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_rejects_casefolded_id_collision_and_preserves_existing_post(tmp_path: Path) -> None:
+    store = MarkdownStore(tmp_path)
+    path = store.upsert(make_post(id="abc", text="original"))
+
+    with pytest.raises(ValueError, match="case-insensitive collision"):
+        store.upsert(make_post(id="ABC", text="replacement"))
+
+    assert path.read_bytes().endswith(b"original\n")
+    assert [item.name for item in tmp_path.glob("*.md")] == ["abc.md"]
