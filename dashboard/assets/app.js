@@ -219,6 +219,7 @@ function isSafeMediaUrl(value) {
 }
 
 function validAggregates(payload, topics) {
+  const nonBlankAuthorPostCount = payload.posts.filter((post) => post.author.trim()).length;
   const mediaCount = payload.posts.reduce((total, post) => total + post.media.length, 0);
   const totalEngagement = payload.posts.reduce(
     (total, post) => total + post.views + post.likes,
@@ -228,8 +229,8 @@ function validAggregates(payload, topics) {
     !Number.isSafeInteger(mediaCount) ||
     !Number.isSafeInteger(totalEngagement) ||
     payload.summary.posts !== payload.posts.length ||
-    payload.summary.authors > payload.summary.posts ||
-    (payload.posts.length > 0 && payload.summary.authors < 1) ||
+    payload.summary.authors > nonBlankAuthorPostCount ||
+    (nonBlankAuthorPostCount > 0 && payload.summary.authors < 1) ||
     payload.summary.media !== mediaCount ||
     payload.summary.engagement !== totalEngagement ||
     payload.fallback_used !== payload.posts.some((post) => post.fallback)

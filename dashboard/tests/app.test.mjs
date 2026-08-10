@@ -309,6 +309,14 @@ test("isValidSnapshot trusts exporter casefolded author counts within safe bound
   }
 });
 
+test("isValidSnapshot accepts zero authors when every author is blank", () => {
+  const payload = validSnapshot();
+  payload.posts[0].author = "  \t ";
+  payload.summary.authors = 0;
+
+  assert.equal(isValidSnapshot(payload), true);
+});
+
 test("matchesFilter supports all, AI, and Web3 only", () => {
   assert.equal(matchesFilter({ family: "AI" }, "all"), true);
   assert.equal(matchesFilter({ family: "AI" }, "AI"), true);
