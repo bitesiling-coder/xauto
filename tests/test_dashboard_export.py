@@ -105,7 +105,16 @@ def test_assert_public_content_accepts_safe_relative_public_content() -> None:
     assert_public_content('{"url": "assets/media/image.jpg", "text": "安全"}')
 
 
-@pytest.mark.parametrize("content", ["React0 component", "reauthorization flow"])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "React0 component",
+        "reauthorization flow",
+        "React0=value",
+        "reauthorization=value",
+        "TOKENIZED=value",
+    ],
+)
 def test_assert_public_content_does_not_match_credential_substrings(
     content: str,
 ) -> None:
@@ -115,7 +124,30 @@ def test_assert_public_content_does_not_match_credential_substrings(
 @pytest.mark.parametrize(
     "content",
     [
+        r"regex uses \d+ for digits",
+        "https://example.com/users/alice/profile",
+        json.dumps({"text": r"regex uses \d+ for digits"}),
+        json.dumps({"url": "https://example.com/users/alice/profile"}),
+    ],
+)
+def test_assert_public_content_accepts_regex_and_https_users_path(content: str) -> None:
+    assert_public_content(content)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
         "OPENAI_API_KEY=secret",
+        "ANTHROPIC_API_KEY=secret",
+        "GITHUB_TOKEN=secret",
+        "AWS_SESSION_TOKEN=secret",
+        "AWS_ACCESS_KEY_ID=secret",
+        "AZURE_ACCESS_KEY_ID=secret",
+        "SESSION_CREDENTIAL=secret",
+        "SERVICE_SECRET=secret",
+        "DATABASE_PASSWORD=secret",
+        "DATABASE_PASSWD=secret",
+        "SIGNING_PRIVATE_KEY=secret",
         "AWS_SECRET_ACCESS_KEY: secret",
         "access_token=secret",
         "refresh-token: secret",
@@ -134,6 +166,19 @@ def test_assert_public_content_rejects_common_credentials_and_path_families(
 ) -> None:
     with pytest.raises(ValueError, match="unsafe public output"):
         assert_public_content(content)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"ANTHROPIC_API_KEY": "secret"},
+        {"nested": {"GITHUB_TOKEN": "secret"}},
+        {"items": [{"AWS_ACCESS_KEY_ID": "secret"}]},
+    ],
+)
+def test_assert_public_content_rejects_sensitive_json_keys(payload: object) -> None:
+    with pytest.raises(ValueError, match="unsafe public output"):
+        assert_public_content(json.dumps(payload))
 
 
 def test_build_writes_exact_public_schema_topics_static_files_and_utf8(tmp_path: Path) -> None:
@@ -275,11 +320,18 @@ def test_default_https_port_is_a_valid_x_url(tmp_path: Path) -> None:
     "unsafe_text",
     [
         "AUTH_TOKEN=secret",
+        "ANTHROPIC_API_KEY=secret",
+        "GITHUB_TOKEN=secret",
+        "AWS_SESSION_TOKEN=secret",
+        "AWS_ACCESS_KEY_ID=secret",
         "ct0=secret",
         "Authorization: Bearer secret",
         r"C:\private\archive",
         "/mnt/d/private/archive",
         "/home/person/archive",
+        "/root/private/archive",
+        "/Users/person/archive",
+        r"\\server\share\archive",
     ],
 )
 def test_unsafe_snapshot_content_preserves_latest(
@@ -293,6 +345,23 @@ def test_unsafe_snapshot_content_preserves_latest(
         build(tmp_path)
 
     assert latest.read_bytes() == previous
+
+
+@pytest.mark.parametrize(
+    "safe_text",
+    [r"regex uses \d+ for digits", "https://example.com/users/alice/profile"],
+)
+def test_safe_regex_and_https_users_path_build_successfully(
+    tmp_path: Path, safe_text: str
+) -> None:
+    prepare_static(tmp_path)
+    save_post(tmp_path, text=safe_text)
+
+    output_path = build(tmp_path)["output_path"]
+
+    assert isinstance(output_path, Path)
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["posts"][0]["text"] == safe_text
 
 
 def test_empty_candidates_preserve_latest(tmp_path: Path) -> None:
