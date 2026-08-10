@@ -158,7 +158,7 @@ def rank_posts(
                 RankedPost(
                     post=replace(
                         item.post,
-                        created_at=item.published_at.isoformat(),
+                        created_at=item.published_at.astimezone(timezone.utc).isoformat(),
                     ),
                     topic=item.topic,
                     score=score,

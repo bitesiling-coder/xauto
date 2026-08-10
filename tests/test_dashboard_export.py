@@ -277,15 +277,33 @@ def test_build_writes_exact_public_schema_topics_static_files_and_utf8(tmp_path:
     }
 
 
-def test_build_canonicalizes_x_timestamp_for_frontend_validator(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("created_at", "expected"),
+    [
+        (
+            "Sun Aug 09 13:00:00 +0000 2026",
+            "2026-08-09T13:00:00+00:00",
+        ),
+        (
+            "2026-08-10T10:30:15+05:30:15",
+            "2026-08-10T05:00:00+00:00",
+        ),
+    ],
+    ids=("x-native", "iso-second-offset"),
+)
+def test_build_canonicalizes_timestamp_for_frontend_validator(
+    tmp_path: Path,
+    created_at: str,
+    expected: str,
+) -> None:
     prepare_static(tmp_path)
-    save_post(tmp_path, created_at="Sun Aug 09 13:00:00 +0000 2026")
+    save_post(tmp_path, created_at=created_at)
 
     build(tmp_path)
 
     latest = config(tmp_path).dashboard_dir / "data" / "latest.json"
     payload = json.loads(latest.read_text(encoding="utf-8"))
-    assert payload["posts"][0]["created_at"] == "2026-08-09T13:00:00+00:00"
+    assert payload["posts"][0]["created_at"] == expected
 
     frontend = Path(__file__).resolve().parents[1] / "dashboard" / "assets" / "app.js"
     validation = subprocess.run(

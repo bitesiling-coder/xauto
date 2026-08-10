@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import sys
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -333,7 +333,9 @@ def test_ineligible_richer_id_duplicate_cannot_suppress_valid_candidate() -> Non
         minimum_today=1,
     )
 
-    assert [item.post for item in ranked] == [valid]
+    assert [item.post for item in ranked] == [
+        replace(valid, created_at="2026-08-10T04:00:00+00:00")
+    ]
 
 
 def test_ineligible_richer_url_duplicate_cannot_suppress_valid_candidate() -> None:
@@ -368,7 +370,9 @@ def test_ineligible_richer_url_duplicate_cannot_suppress_valid_candidate() -> No
         minimum_today=1,
     )
 
-    assert [item.post for item in ranked] == [valid]
+    assert [item.post for item in ranked] == [
+        replace(valid, created_at="2026-08-10T04:00:00+00:00")
+    ]
 
 
 @pytest.mark.parametrize("dedupe_path", ["id", "url"])
