@@ -60,6 +60,16 @@ def test_daily_runner_derives_root_and_appends_exact_collect_command() -> None:
     assert 'exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" collect --all' in script
 
 
+def test_readme_documents_local_media_and_resilient_collection() -> None:
+    readme = PROJECT_ROOT.joinpath("README.md").read_text(encoding="utf-8")
+
+    assert "data/media/<推文ID>/" in readme
+    assert "视频只下载封面" in readme
+    assert "正文只有短链接" in readme
+    assert "每组每天采集 10 条" in readme
+    assert "图片下载失败" in readme
+
+
 def test_installer_has_idempotent_daily_current_user_defaults() -> None:
     script = INSTALLER.read_text(encoding="utf-8")
 

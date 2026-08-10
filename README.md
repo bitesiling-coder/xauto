@@ -32,16 +32,18 @@ schedule:
   time: "10:00"
   timezone: Asia/Singapore
 collection:
-  limit_per_keyword: 50
+  limit_per_keyword: 10
   delay_seconds: 10
 keywords:
-  - DDR5
-  - 人工智能
+  - '"Autonomous AI Agents" OR 自主智能体 OR "Rogue AI Agents" OR "Agent Security" OR "AI Safety Evaluation" OR "AI Cybersecurity"'
+  - '"World Models" OR 世界模型 OR "Open-weight Models" OR AGI OR "Intelligence Explosion" OR "Embodied AI" OR 具身智能 OR "Humanoid Robots"'
+  - 'RWA OR 现实资产代币化 OR "Tokenized Stocks" OR "Stablecoin Payments" OR "Solana RWA"'
+  - '"Prediction Markets" OR "AI Agents Crypto" OR x402 OR "On-chain Perps" OR "Crypto ETF" OR MiCA OR "CLARITY Act" OR 加密监管'
 embedding:
   model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 ```
 
-`limit_per_keyword` 是每个关键词的默认数量，`delay_seconds` 是 `collect --all` 在两个关键词之间的等待时间。`embedding.model` 决定向量模型。配置中的时间为每日 10:00，时区为 `Asia/Singapore`；但 Windows 计划任务使用 Windows 本地时间，脚本不做时区换算。请确保 Windows 时区正确，并在安装计划任务时传入同样的时间。计划任务以当前交互式登录用户运行。
+当前配置包含两组 AI 和两组 Web3 查询，每组每天采集 10 条，最多约 40 条结果。`limit_per_keyword` 是每组的默认数量，`delay_seconds` 是 `collect --all` 在两组之间的等待时间。`embedding.model` 决定向量模型。配置中的时间为每日 10:00，时区为 `Asia/Singapore`；但 Windows 计划任务使用 Windows 本地时间，脚本不做时区换算。请确保 Windows 时区正确，并在安装计划任务时传入同样的时间。计划任务以当前交互式登录用户运行。
 
 然后执行一次收集、检查状态和检索：
 
@@ -73,6 +75,22 @@ xrag --root . rebuild
 - `import`、`status` 和 `rebuild` 输出 JSON。`search` 输出排名、分数、作者、时间、文本、URL 和 Markdown 路径；无命中时输出 `No results found.`。
 - `data/markdown/` 是可读、可备份的权威帖子库；`data/imports/` 是建议的待导入目录；`data/chroma/` 是可丢弃索引。
 - `logs/last-run.json` 保存最近一次 collect/import/rebuild 摘要；OpenCLI 搜索失败时会记录该关键词、零写入计数和 `outcome: failed`。OpenCLI 返回的畸形行计入 `found/errors` 并以脱敏诊断写入 `logs/errors.jsonl`，不会生成 Markdown 或进入向量索引。`logs/scheduler.log` 接收计划任务的标准输出和错误。
+
+## 本地媒体与 Markdown
+
+每条推文仍以 `data/markdown/<推文ID>.md` 作为权威文档；允许下载的 X 图片保存在 `data/media/<推文ID>/`。Markdown 会显示完整正文、本地图片、引用推文和原始 X 链接，因此可以直接预览，也可以继续供 RAG 重建和检索。
+
+- 视频只下载封面，不下载完整视频；原始视频 URL 继续保留。
+- 正文只有短链接的推文也会保留，不会因信息较少而删除。
+- 图片下载失败、超时、类型不支持或超过大小上限时，正文仍会入库，失败记录写入 `logs/errors.jsonl`。
+- 自动下载只接受 HTTPS 的 X 图片域名，不会抓取导入文件指向的任意第三方网站。
+- `xrag rebuild` 只读取本地 Markdown，不会重新下载媒体。
+
+查看已经落盘的图片和视频封面：
+
+```bash
+find data/media -mindepth 2 -maxdepth 2 -type f -print
+```
 
 ## 导入格式
 
@@ -145,7 +163,7 @@ Unregister-ScheduledTask -TaskName 'X-RAG Daily Collection' -Confirm:$false
 
 ## 备份与恢复
 
-为了获得一致快照，备份前先禁用或暂停 Windows 计划任务，并确保没有手动的 `collect`、`import` 或 `rebuild` 写入操作正在运行。必备内容是权威数据 `data/markdown/` 和配置 `config/`。如果把原始导入文件保留在 `data/imports/`，也应一并备份；如需审计历史，可选备份 `logs/`。`data/chroma/` 是可重建索引，可不备份。
+为了获得一致快照，备份前先禁用或暂停 Windows 计划任务，并确保没有手动的 `collect`、`import` 或 `rebuild` 写入操作正在运行。必备内容是权威数据 `data/markdown/`、本地媒体 `data/media/` 和配置 `config/`。如果把原始导入文件保留在 `data/imports/`，也应一并备份；如需审计历史，可选备份 `logs/`。`data/chroma/` 是可重建索引，可不备份。
 
 恢复必备目录（以及需要保留的 `data/imports/`/`logs/`）后，在 WSL 项目根目录重建向量索引：
 
@@ -161,6 +179,7 @@ xrag --root . status
 - **更换了 `embedding.model` 或 Chroma 损坏：**运行 `xrag --root . rebuild`。重建会在独立目录生成完整新索引，成功后才替换旧索引；模型加载或索引失败时保留旧索引。
 - **Markdown 损坏：** `xrag --root . status` 的 `document_errors` 会报告无法解析的文档数。检查 `logs/errors.jsonl`，修复对应 Markdown front matter 后再 `rebuild`；只要有一篇文档失败，重建就不会替换旧索引。
 - **计划任务失败：**查看 `logs/scheduler.log`、`logs/errors.jsonl` 和 `Get-ScheduledTaskInfo`，确认 WSL 发行版名、`.venv/bin/xrag` 与项目路径存在。
+- **图片下载失败：**查看 `logs/errors.jsonl` 中的 `media` 记录；正文和远程链接仍会保留。确认 `pbs.twimg.com` 可访问后，下次采集同一推文会再次尝试。
 - **中文乱码：**导入文件必须是 UTF-8；在 WSL 中可设置 `export PYTHONUTF8=1` 后重试。请优先在 WSL 终端运行 CLI。
 
 ## 安全
@@ -175,6 +194,7 @@ X工作流/
 ├── data/
 │   ├── imports/                  # 建议的待导入文件目录
 │   ├── markdown/                 # 权威 Markdown 帖子库
+│   ├── media/                    # 按推文 ID 保存的图片与视频封面
 │   └── chroma/                   # 可重建的本地向量索引
 ├── logs/                        # 最近运行、错误和调度日志
 ├── scripts/
