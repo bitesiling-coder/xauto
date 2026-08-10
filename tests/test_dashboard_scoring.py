@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import sys
 from dataclasses import FrozenInstanceError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from xrag.dashboard_scoring import TOPICS, Topic, rank_posts
+from xrag.dashboard_scoring import TOPICS, RankedPost, Topic, rank_posts
 from xrag.models import LocalMedia, Post
 
 
@@ -63,6 +63,18 @@ def test_topics_have_exact_public_identity_and_are_immutable() -> None:
     )
     with pytest.raises(FrozenInstanceError):
         TOPICS[0].label = "changed"  # type: ignore[misc]
+    ranked = RankedPost(
+        post=post("immutable"),
+        topic=TOPICS[0],
+        score=1.0,
+        engagement=1.0,
+        freshness=1.0,
+        topic_frequency=1.0,
+        completeness=1.0,
+        fallback=False,
+    )
+    with pytest.raises(FrozenInstanceError):
+        ranked.score = 0.0  # type: ignore[misc]
 
 
 def test_generated_dashboard_site_is_ignored_by_git() -> None:
@@ -85,6 +97,28 @@ def test_multiple_sourced_topics_use_query_match_strength() -> None:
         now=NOW,
         timezone_name="Asia/Singapore",
         configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+
+    assert ranked[0].topic == TOPICS[1]
+
+
+def test_cjk_query_tokens_affect_multi_topic_match_strength() -> None:
+    queries = (
+        '"Agent Security" OR 智能体安全',
+        '"World Models" OR 世界模型 OR 具身智能',
+    )
+    item = post(
+        "cjk-multi",
+        text="世界模型正在推动具身智能研究。",
+        source_keywords=(queries[0], queries[1]),
+    )
+
+    ranked = rank_posts(
+        [item],
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=queries,
         minimum_today=1,
     )
 
@@ -147,6 +181,51 @@ def test_fallback_uses_rolling_window_excludes_old_posts_and_labels_only_prior_d
     assert {item.post.id: item.fallback for item in ranked} == {"today": False, "prior": True}
 
 
+def test_passed_timezone_controls_calendar_day_across_utc_boundary() -> None:
+    singapore = ZoneInfo("Asia/Singapore")
+    local_now = datetime(2026, 8, 10, 10, 0, tzinfo=singapore)
+    same_day = datetime(2026, 8, 10, 0, 30, tzinfo=singapore)
+    prior_day = datetime(2026, 8, 9, 23, 30, tzinfo=singapore)
+    assert local_now.astimezone(timezone.utc).date() != same_day.astimezone(
+        timezone.utc
+    ).date()
+    assert same_day.astimezone(timezone.utc).date() == prior_day.astimezone(
+        timezone.utc
+    ).date()
+    items = [
+        post(
+            "same-singapore-day",
+            created_at=same_day,
+        ),
+        post(
+            "prior-singapore-day",
+            created_at=prior_day,
+        ),
+    ]
+
+    today_only = rank_posts(
+        items,
+        now=local_now,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+    fallback = rank_posts(
+        items,
+        now=local_now,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=2,
+    )
+
+    assert [item.post.id for item in today_only] == ["same-singapore-day"]
+    assert today_only[0].fallback is False
+    assert {item.post.id: item.fallback for item in fallback} == {
+        "same-singapore-day": False,
+        "prior-singapore-day": True,
+    }
+
+
 def test_deduplicates_id_then_normalized_url_keeping_more_complete_record() -> None:
     media = (
         LocalMedia(
@@ -175,21 +254,67 @@ def test_deduplicates_id_then_normalized_url_keeping_more_complete_record() -> N
     assert {item.post.id for item in ranked} == {"same", "url-rich"}
 
 
-def test_dedupe_ties_use_views_then_likes_then_text_length() -> None:
-    items = [
-        post("metric", text="short", views=5, likes=100),
-        post("METRIC", text="longer", views=6, likes=0),
-    ]
+@pytest.mark.parametrize("dedupe_path", ["id", "url"])
+@pytest.mark.parametrize(
+    ("loser_values", "winner_values"),
+    [
+        (
+            {"text": "same-a", "views": 5, "likes": 100},
+            {"text": "same-b", "views": 6, "likes": 0},
+        ),
+        (
+            {"text": "same-a", "views": 6, "likes": 5},
+            {"text": "same-b", "views": 6, "likes": 6},
+        ),
+        (
+            {"text": "short", "views": 6, "likes": 6},
+            {"text": "longer", "views": 6, "likes": 6},
+        ),
+    ],
+    ids=["views", "likes", "text-length"],
+)
+def test_dedupe_ties_use_views_then_likes_then_text_length(
+    dedupe_path: str,
+    loser_values: dict[str, object],
+    winner_values: dict[str, object],
+) -> None:
+    if dedupe_path == "id":
+        loser = post(
+            "DUPLICATE",
+            author="loser",
+            url="https://x.com/status/loser",
+            **loser_values,  # type: ignore[arg-type]
+        )
+        winner = post(
+            "duplicate",
+            author="winner",
+            url="https://x.com/status/winner",
+            **winner_values,  # type: ignore[arg-type]
+        )
+    else:
+        loser = post(
+            "loser",
+            author="loser",
+            url=" HTTPS://X.COM/STATUS/SHARED ",
+            **loser_values,  # type: ignore[arg-type]
+        )
+        winner = post(
+            "winner",
+            author="winner",
+            url="https://x.com/status/shared",
+            **winner_values,  # type: ignore[arg-type]
+        )
 
     ranked = rank_posts(
-        items,
+        [loser, winner],
         now=NOW,
         timezone_name="Asia/Singapore",
         configured_keywords=QUERIES,
         minimum_today=1,
     )
 
-    assert ranked[0].post.text == "longer"
+    assert len(ranked) == 1
+    assert ranked[0].post.author == "winner"
 
 
 def test_enforces_casefolded_author_cap_and_result_limit() -> None:
