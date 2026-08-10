@@ -92,6 +92,40 @@ xrag --root . rebuild
 find data/media -mindepth 2 -maxdepth 2 -type f -print
 ```
 
+## 公开热点看板
+
+看板只读取现有的权威 Markdown 和本地媒体，从中选出当天（不足时回溯最近 48 小时）的 AI/Web3 热点，并生成白色底、淡色卡片的静态网页。它不修改、移动或删除 `data/markdown/`、`data/media/`、`data/imports/`、`data/chroma/` 或 `logs/` 中的现有内容。
+
+在 WSL 项目根目录中运行：
+
+```bash
+# 只读取现有 Markdown 并生成本地静态站点
+xrag --root . dashboard build
+
+# 本地预览；浏览器打开 http://localhost:8000
+python -m http.server 8000 --directory data/dashboard-site
+
+# 读取现有 Markdown、构建并发布到 gh-pages
+xrag --root . dashboard publish
+
+# 立即采集四组关键词、构建并发布
+xrag --root . dashboard update
+```
+
+启用 GitHub Pages 后，本项目的公开地址是 <https://bitesiling-coder.github.io/xauto/>。页面上的“立即刷新”只会绕过浏览器缓存、重新读取已经发布的 `data/latest.json`，并提示是否发现了更新快照；它不会远程控制这台电脑，也不会触发 X 采集。需要现在采集并发布时，请在本机运行 `dashboard update`。
+
+`dashboard build` 和 `dashboard publish` 都会先从现有 Markdown 构建内容；前者只生成本地站点，后者再发布。`dashboard update` 则按“采集全部四组关键词 → 构建 → 校验 → 发布”的顺序执行。采集没有写入任何帖子、输出校验失败或 Git 发布失败时，流程以非零状态停止，不会用空白或不安全的内容替换当前线上快照。
+
+发布前请确认以下条件：
+
+- `opencli doctor` 显示浏览器桥接及 Twitter/X 扩展已经连接；`dashboard update` 和每日任务依赖它们，单纯 `build`/`publish` 不重新采集。
+- Git 已配置提交身份（`git config user.name` 和 `git config user.email`），且当前认证可以执行 `git push origin gh-pages`。发布器不会代为读取、打印或保存 Git/X 凭据。
+- Git 远程 `origin` 指向预期仓库；网络或认证失败后，修复问题并重新运行原命令即可，发布器不会执行强制推送或破坏性 Git 恢复。
+
+本地生成目录是 `data/dashboard-site/`，已被 Git 忽略。发布器使用项目内专用的 `.worktrees/x-rag-pages/` 链接 worktree，把经过白名单校验的公开文件复制到 `gh-pages`；它不使用带删除功能的目录同步，也不会清理来源数据。带日期的 JSON 快照和按内容哈希命名的媒体会持续累积，因此需要定期监控本地磁盘与 `gh-pages` 仓库大小；如需制定历史保留策略，请先单独审核，不要直接对数据目录做递归删除。
+
+公开输出采用字段白名单，并在提交前扫描凭据和本地绝对路径。如果检测到 `auth_token`、`ct0`、其他凭据形式或 Windows/WSL 本地路径，发布会中止，已有线上 `latest.json` 保持不变。此时检查命令报错所指的源 Markdown/公开字段，在本地修正敏感内容后重新构建；不要把 token 粘贴到命令、配置、Markdown、日志或问题报告中。
+
 ## 导入格式
 
 支持 `.yaml`/`.yml`、`.json` 和 `.md`。YAML/JSON 顶层可以是单个对象或对象列表；每条至少需要非空 `id` 和 `text`。
@@ -152,7 +186,9 @@ Get-ScheduledTaskInfo -TaskName 'X-RAG Daily Collection'
 
 安装器将登录类型设为 `Interactive`，因此只有当该 Windows 用户已登录，且 OpenCLI 浏览器桥接可用时，收集任务才能正常运行。触发时间始终是 Windows 本地时间，不会根据 `schedule.timezone` 换算。
 
-任务会调用 WSL 内的 `scripts/run-daily.sh`，该脚本运行项目自带的 `.venv/bin/xrag --root <项目根> collect --all`。`config/keywords.yaml` 中的 `schedule.enabled: false` **不会**停止 `run-daily.sh`，也不会禁用或删除已注册的 Windows 任务。需要暂停或删除时显式执行：
+任务会调用 WSL 内的 `scripts/run-daily.sh`，该脚本运行项目自带的 `.venv/bin/xrag --root <项目根> dashboard update`，因此每天 10:00 依次完成四组关键词采集、静态站点构建、安全校验和 `gh-pages` 发布。它只有在当前 Windows 用户已登录、OpenCLI 浏览器桥接和 Twitter/X 扩展已连接、Git 提交身份已配置且 Git 认证允许推送 `origin/gh-pages` 时才能完成全流程。任一步失败都会停止后续步骤并保留上一次成功发布的线上快照，详细输出写入 `logs/scheduler.log`。
+
+`config/keywords.yaml` 中的 `schedule.enabled: false` **不会**停止 `run-daily.sh`，也不会禁用或删除已注册的 Windows 任务。需要暂停或删除时显式执行：
 
 ```powershell
 Disable-ScheduledTask -TaskName 'X-RAG Daily Collection'
@@ -178,7 +214,8 @@ xrag --root . status
 - **WSL 代理警告或无法下载模型：** Windows 上的 localhost 代理未必能直接从 WSL 访问。先修正 WSL 网络/代理配置，确认 WSL 可访问所需下载地址，再重试首次模型加载。
 - **更换了 `embedding.model` 或 Chroma 损坏：**运行 `xrag --root . rebuild`。重建会在独立目录生成完整新索引，成功后才替换旧索引；模型加载或索引失败时保留旧索引。
 - **Markdown 损坏：** `xrag --root . status` 的 `document_errors` 会报告无法解析的文档数。检查 `logs/errors.jsonl`，修复对应 Markdown front matter 后再 `rebuild`；只要有一篇文档失败，重建就不会替换旧索引。
-- **计划任务失败：**查看 `logs/scheduler.log`、`logs/errors.jsonl` 和 `Get-ScheduledTaskInfo`，确认 WSL 发行版名、`.venv/bin/xrag` 与项目路径存在。
+- **计划任务失败：**查看 `logs/scheduler.log`、`logs/errors.jsonl` 和 `Get-ScheduledTaskInfo`，确认 WSL 发行版名、`.venv/bin/xrag` 与项目路径存在；再运行 `opencli doctor` 检查浏览器桥接/扩展，并确认 Git 身份与 `git push origin gh-pages` 认证可用。修复后可以手动运行 `xrag --root . dashboard update` 验证同一流程。
+- **看板构建或发布被阻止：**空采集、候选内容不足、公开输出包含凭据/本地路径、Git worktree 不安全、远程冲突或网络认证失败都会使命令以非零状态退出。不要删除 `data/markdown/` 或重建 `gh-pages` worktree 来规避校验；先根据脱敏错误检查输入与 Git/OpenCLI 状态，然后重试。失败不会替换当前线上快照。
 - **图片下载失败：**查看 `logs/errors.jsonl` 中的 `media` 记录；正文和远程链接仍会保留。确认 `pbs.twimg.com` 可访问后，下次采集同一推文会再次尝试。
 - **中文乱码：**导入文件必须是 UTF-8；在 WSL 中可设置 `export PYTHONUTF8=1` 后重试。请优先在 WSL 终端运行 CLI。
 
@@ -195,7 +232,11 @@ X工作流/
 │   ├── imports/                  # 建议的待导入文件目录
 │   ├── markdown/                 # 权威 Markdown 帖子库
 │   ├── media/                    # 按推文 ID 保存的图片与视频封面
-│   └── chroma/                   # 可重建的本地向量索引
+│   ├── chroma/                   # 可重建的本地向量索引
+│   └── dashboard-site/           # 生成的本地静态站点（Git 忽略）
+├── dashboard/                    # 看板 HTML、CSS、JavaScript 源文件
+├── .worktrees/
+│   └── x-rag-pages/              # 专用 gh-pages 发布 worktree
 ├── logs/                        # 最近运行、错误和调度日志
 ├── scripts/
 │   ├── install-schedule.ps1      # Windows 计划任务安装/更新
