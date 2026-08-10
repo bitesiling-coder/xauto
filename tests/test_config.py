@@ -44,6 +44,7 @@ def test_load_config_reads_valid_configuration(tmp_path: Path) -> None:
     assert config.schedule_time == "10:00"
     assert config.keywords == ("人工智能", "AI 视频")
     assert config.markdown_dir == tmp_path / "data" / "markdown"
+    assert config.media_dir == tmp_path / "data" / "media"
 
 
 def test_load_config_rejects_invalid_schedule_time(tmp_path: Path) -> None:

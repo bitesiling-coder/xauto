@@ -24,6 +24,10 @@ class AppConfig:
         return self.root / "data" / "markdown"
 
     @property
+    def media_dir(self) -> Path:
+        return self.root / "data" / "media"
+
+    @property
     def import_dir(self) -> Path:
         return self.root / "data" / "imports"
 
