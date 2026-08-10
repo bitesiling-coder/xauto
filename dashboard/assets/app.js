@@ -1,4 +1,16 @@
 const STALE_AFTER_MS = 26 * 60 * 60 * 1000;
+const RFC3339_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/;
+const LOCAL_MEDIA_PATTERN = /^assets\/media\/[a-f0-9]{64}\.(?:jpg|jpeg|png|gif|webp)$/;
+const MEDIA_TYPES = new Set(["image", "video_poster"]);
+const APPROVED_TOPICS = new Map([
+  ["ai-agents-security", { label: "AI Agents 与 Agent Security", family: "AI" }],
+  ["world-models-embodied-ai", { label: "World Models 与 Embodied AI", family: "AI" }],
+  ["rwa-stablecoin-payments", { label: "RWA 与 Stablecoin Payments", family: "Web3" }],
+  [
+    "prediction-markets-regulation",
+    { label: "Prediction Markets 与 Crypto Regulation", family: "Web3" },
+  ],
+]);
 
 export function formatMetric(value) {
   const numeric = Number(value);
@@ -71,14 +83,23 @@ export function isValidSnapshot(payload) {
     !validSummary(payload.summary) ||
     !Array.isArray(payload.topics) ||
     payload.topics.length !== 4 ||
-    !payload.topics.every(validTopic) ||
     !Array.isArray(payload.posts) ||
-    payload.posts.length === 0 ||
-    !payload.posts.every(validPost)
+    payload.posts.length === 0
   ) {
     return false;
   }
-  return true;
+  const topics = new Map();
+  for (const topic of payload.topics) {
+    if (!validTopic(topic) || topics.has(topic.id)) return false;
+    topics.set(topic.id, topic);
+  }
+  if (
+    topics.size !== APPROVED_TOPICS.size ||
+    !payload.posts.every((post) => validPost(post, topics))
+  ) {
+    return false;
+  }
+  return validAggregates(payload, topics);
 }
 
 function isRecord(value) {
@@ -86,7 +107,43 @@ function isRecord(value) {
 }
 
 function validDate(value) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  if (typeof value !== "string") return false;
+  const match = RFC3339_PATTERN.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, zone, , offsetHourText, offsetMinuteText] = match;
+  const [year, month, day, hour, minute, second] = [
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+  ].map(Number);
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    return false;
+  }
+  if (zone !== "Z" && (Number(offsetHourText) > 23 || Number(offsetMinuteText) > 59)) {
+    return false;
+  }
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(hour, minute, second, 0);
+  return (
+    calendar.getUTCFullYear() === year &&
+    calendar.getUTCMonth() === month - 1 &&
+    calendar.getUTCDate() === day &&
+    calendar.getUTCHours() === hour &&
+    calendar.getUTCMinutes() === minute &&
+    calendar.getUTCSeconds() === second &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 
 function validTimezone(value) {
@@ -99,35 +156,47 @@ function validTimezone(value) {
   }
 }
 
-function validMetric(value) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+function validCount(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function validScore(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 function validSummary(summary) {
   return (
     isRecord(summary) &&
-    ["posts", "authors", "media", "engagement"].every((key) => validMetric(summary[key]))
+    ["posts", "authors", "media", "engagement"].every((key) => validCount(summary[key]))
   );
 }
 
 function validTopic(topic) {
+  if (!isRecord(topic) || typeof topic.id !== "string") return false;
+  const approved = APPROVED_TOPICS.get(topic.id);
   return (
-    isRecord(topic) &&
-    ["id", "label", "family", "top_keyword"].every((key) => typeof topic[key] === "string") &&
-    validMetric(topic.posts) &&
-    validMetric(topic.score)
+    approved !== undefined &&
+    topic.label === approved.label &&
+    topic.family === approved.family &&
+    typeof topic.top_keyword === "string" &&
+    validCount(topic.posts) &&
+    validScore(topic.score)
   );
 }
 
-function validPost(post) {
+function validPost(post, topics) {
+  if (!isRecord(post) || typeof post.topic !== "string") return false;
+  const topic = topics.get(post.topic);
   return (
-    isRecord(post) &&
-    ["id", "author", "text", "topic", "family"].every((key) => typeof post[key] === "string") &&
+    topic !== undefined &&
+    ["id", "author", "text", "family"].every((key) => typeof post[key] === "string") &&
+    post.id.length > 0 &&
+    post.family === topic.family &&
     validDate(post.created_at) &&
     isSafeExternalUrl(post.url) &&
-    validMetric(post.likes) &&
-    validMetric(post.views) &&
-    validMetric(post.score) &&
+    validCount(post.likes) &&
+    validCount(post.views) &&
+    validScore(post.score) &&
     typeof post.fallback === "boolean" &&
     Array.isArray(post.keywords) &&
     post.keywords.every((keyword) => typeof keyword === "string") &&
@@ -139,29 +208,132 @@ function validPost(post) {
 function validMedia(media) {
   return (
     isRecord(media) &&
-    typeof media.type === "string" &&
+    MEDIA_TYPES.has(media.type) &&
     typeof media.alt === "string" &&
     isSafeMediaUrl(media.url)
   );
 }
 
 function isSafeMediaUrl(value) {
-  if (typeof value !== "string" || value !== value.trim()) return false;
-  if (/^assets\/media\/[a-f0-9]{64}\.(?:gif|jpe?g|png|webp)$/i.test(value)) return true;
-  try {
-    const parsed = new URL(value);
-    return (
-      parsed.protocol === "https:" &&
-      parsed.username === "" &&
-      parsed["password"] === "" &&
-      (parsed.port === "" || parsed.port === "443") &&
-      ["x.com", "www.x.com", "twitter.com", "www.twitter.com", "pbs.twimg.com", "video.twimg.com"].includes(
-        parsed.hostname.toLowerCase(),
-      )
-    );
-  } catch {
+  return typeof value === "string" && LOCAL_MEDIA_PATTERN.test(value);
+}
+
+function validAggregates(payload, topics) {
+  const authorKeys = new Set(
+    payload.posts
+      .map((post) => post.author.trim())
+      .filter(Boolean)
+      .map(casefoldText),
+  );
+  const mediaCount = payload.posts.reduce((total, post) => total + post.media.length, 0);
+  const totalEngagement = payload.posts.reduce(
+    (total, post) => total + post.views + post.likes,
+    0,
+  );
+  if (
+    !Number.isSafeInteger(mediaCount) ||
+    !Number.isSafeInteger(totalEngagement) ||
+    payload.summary.posts !== payload.posts.length ||
+    payload.summary.authors !== authorKeys.size ||
+    payload.summary.media !== mediaCount ||
+    payload.summary.engagement !== totalEngagement ||
+    payload.fallback_used !== payload.posts.some((post) => post.fallback)
+  ) {
     return false;
   }
+  for (const [id, topic] of topics) {
+    if (topic.posts !== payload.posts.filter((post) => post.topic === id).length) return false;
+  }
+  return true;
+}
+
+function casefoldText(value) {
+  const expansions = {
+    "ß": "ss",
+    "µ": "μ",
+    "ς": "σ",
+    "ſ": "s",
+    "ŉ": "ʼn",
+    "և": "եւ",
+    "ﬀ": "ff",
+    "ﬁ": "fi",
+    "ﬂ": "fl",
+    "ﬃ": "ffi",
+    "ﬄ": "ffl",
+    "ﬅ": "st",
+    "ﬆ": "st",
+  };
+  return value
+    .toLocaleLowerCase("en-US")
+    .replace(/[ßµςſŉևﬀﬁﬂﬃﬄﬅﬆ]/gu, (character) => expansions[character]);
+}
+
+export function matchesFilter(post, filter) {
+  if (filter === "all") return true;
+  return (filter === "AI" || filter === "Web3") && post?.family === filter;
+}
+
+export async function loadSnapshotState({
+  fetchSnapshot,
+  currentSnapshot = null,
+  refreshed = false,
+  clock = Date.now,
+}) {
+  const existing = currentSnapshot && isValidSnapshot(currentSnapshot) ? currentSnapshot : null;
+  try {
+    const response = await fetchSnapshot(snapshotUrl(clock()), { cache: "no-store" });
+    if (!response?.ok) throw new Error("snapshot request failed");
+    const candidate = await response.json();
+    if (!isValidSnapshot(candidate)) throw new Error("invalid snapshot");
+    if (
+      existing &&
+      (Date.parse(candidate.generated_at) < Date.parse(existing.generated_at) ||
+        stableSnapshot(candidate) === stableSnapshot(existing))
+    ) {
+      return { status: "unchanged", snapshot: existing, refreshed };
+    }
+    return { status: "newer", snapshot: candidate, refreshed };
+  } catch {
+    return existing
+      ? { status: "failed-with-existing", snapshot: existing, refreshed }
+      : { status: "failed", snapshot: null, refreshed };
+  }
+}
+
+function stableSnapshot(value) {
+  if (Array.isArray(value)) return `[${value.map(stableSnapshot).join(",")}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSnapshot(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function bannerForState(snapshot, status, now = Date.now(), refreshed = true) {
+  if (snapshot && isStale(snapshot.generated_at, now)) {
+    return {
+      message: "当前快照已超过 26 小时，内容可能不是最新，请尝试刷新。",
+      tone: "warning",
+    };
+  }
+  if (snapshot?.fallback_used) {
+    return { message: "最新窗口样本不足，页面包含已标注的回溯样本。", tone: "warning" };
+  }
+  if (status === "unchanged") {
+    return { message: "当前已是最新数据。", tone: "default" };
+  }
+  if (status === "newer") {
+    return {
+      message: refreshed ? "刷新成功，已载入新数据。" : "已载入最新公开热点快照。",
+      tone: "default",
+    };
+  }
+  if (status === "failed-with-existing") {
+    return { message: "刷新失败，继续展示上次数据。", tone: "error" };
+  }
+  return { message: "暂时无法读取热点数据，请稍后点击“立即刷新”重试。", tone: "error" };
 }
 
 function safeNumber(value) {
@@ -207,11 +379,6 @@ if (typeof document !== "undefined") {
     elements.status.dataset.tone = tone;
   }
 
-  function validateSnapshot(payload) {
-    if (!isValidSnapshot(payload)) throw new Error("invalid snapshot");
-    return payload;
-  }
-
   function externalLink(label, url, className = "source-link") {
     if (!isSafeExternalUrl(url)) throw new Error("invalid external link");
     const link = document.createElement("a");
@@ -236,15 +403,34 @@ if (typeof document !== "undefined") {
     }
   }
 
-  function appendMedia(container, media) {
+  function setPlaceholderSemantics(container, label) {
+    container.setAttribute("role", "img");
+    container.setAttribute("aria-label", label);
+  }
+
+  function clearPlaceholderSemantics(container) {
+    container.removeAttribute("role");
+    container.removeAttribute("aria-label");
+  }
+
+  function appendMedia(container, media, { priority = false, label = "热点媒体占位图" } = {}) {
+    setPlaceholderSemantics(container, label);
     if (!media || !isSafeMediaUrl(media.url)) return;
     const image = document.createElement("img");
     image.src = media.url;
     image.alt = media.alt || "热点配图";
-    image.loading = "lazy";
+    image.loading = priority ? "eager" : "lazy";
+    if (priority) image.fetchPriority = "high";
     image.decoding = "async";
+    image.addEventListener("load", () => clearPlaceholderSemantics(container), { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
     container.append(image);
+    if (image.complete && image.naturalWidth > 0) clearPlaceholderSemantics(container);
+  }
+
+  function conciseExcerpt(text, author) {
+    const value = text.trim() || `@${author || "未知作者"} 的公开动态暂无文字摘要。`;
+    return value.length > 180 ? `${value.slice(0, 179)}…` : value;
   }
 
   function topicLabel(post) {
@@ -256,8 +442,10 @@ if (typeof document !== "undefined") {
     const post = sortPosts(state.snapshot.posts, "score")[0];
     const media = document.createElement("div");
     media.className = "lead-media media-placeholder";
-    media.setAttribute("aria-label", "领衔热点媒体预览");
-    appendMedia(media, post.media?.[0]);
+    appendMedia(media, post.media?.[0], {
+      priority: true,
+      label: "领衔热点媒体占位图",
+    });
 
     const content = document.createElement("div");
     content.className = "lead-content";
@@ -265,10 +453,10 @@ if (typeof document !== "undefined") {
     kicker.className = "lead-kicker";
     kicker.textContent = post.fallback ? `${topicLabel(post)} · 回溯样本` : topicLabel(post);
     const title = document.createElement("h3");
-    title.textContent = post.text || `@${post.author} 的公开动态`;
+    title.textContent = `@${post.author || "未知作者"} · 今日领衔`;
     const excerpt = document.createElement("p");
     excerpt.className = "lead-excerpt";
-    excerpt.textContent = post.text || "该条目没有文字摘要，可查看原帖了解详情。";
+    excerpt.textContent = conciseExcerpt(post.text, post.author);
     const meta = document.createElement("div");
     meta.className = "lead-meta";
     for (const label of [
@@ -345,7 +533,7 @@ if (typeof document !== "undefined") {
   function fillPostCard(post) {
     const card = elements.template.content.firstElementChild.cloneNode(true);
     const media = card.querySelector(".post-media");
-    appendMedia(media, post.media?.[0]);
+    appendMedia(media, post.media?.[0], { label: "热点卡片媒体占位图" });
     card.querySelector(".topic-pill").textContent = topicLabel(post);
     const fallback = card.querySelector(".fallback-badge");
     fallback.hidden = !post.fallback;
@@ -368,7 +556,7 @@ if (typeof document !== "undefined") {
 
   function renderFeed() {
     const visible = state.snapshot.posts.filter(
-      (post) => state.filter === "all" || post.family === state.filter,
+      (post) => matchesFilter(post, state.filter),
     );
     const cards = sortPosts(visible, state.sort).map(fillPostCard);
     if (!cards.length) {
@@ -392,7 +580,7 @@ if (typeof document !== "undefined") {
     const heading = document.createElement("h2");
     heading.id = "dialog-heading";
     heading.className = "dialog-title";
-    heading.textContent = post.text || `@${post.author} 的公开动态`;
+    heading.textContent = `@${post.author || "未知作者"} · 热点详情`;
     const copy = document.createElement("p");
     copy.className = "dialog-copy";
     copy.textContent = post.text || "该动态没有文字内容。";
@@ -418,13 +606,13 @@ if (typeof document !== "undefined") {
       for (const item of post.media) {
         const frame = document.createElement("div");
         frame.className = "dialog-media media-placeholder";
-        appendMedia(frame, item);
+        appendMedia(frame, item, { label: "热点详情媒体占位图" });
         gallery.append(frame);
       }
     } else {
       const frame = document.createElement("div");
       frame.className = "dialog-media media-placeholder";
-      frame.setAttribute("aria-label", "该热点没有媒体素材");
+      setPlaceholderSemantics(frame, "该热点没有媒体素材");
       gallery.append(frame);
     }
     const keywords = document.createElement("div");
@@ -454,7 +642,7 @@ if (typeof document !== "undefined") {
     elements.dialog.showModal();
   }
 
-  function render(snapshot, refreshed) {
+  function render(snapshot) {
     state.snapshot = snapshot;
     elements.updatedAt.dateTime = snapshot.generated_at;
     elements.updatedAt.textContent = dateLabel(snapshot.generated_at, snapshot.timezone, true);
@@ -463,15 +651,6 @@ if (typeof document !== "undefined") {
     renderTopics();
     renderFeed();
 
-    if (isStale(snapshot.generated_at)) {
-      setStatus("当前快照已超过 26 小时，内容可能不是最新，请尝试刷新。", "warning");
-    } else if (snapshot.fallback_used) {
-      setStatus("最新窗口样本不足，页面包含已标注的回溯样本。", "warning");
-    } else if (refreshed) {
-      setStatus("刷新成功，已载入最新有效快照。", "default");
-    } else {
-      setStatus("已载入最新公开热点快照。", "default");
-    }
   }
 
   async function loadSnapshot(refreshed = false) {
@@ -479,12 +658,15 @@ if (typeof document !== "undefined") {
     setBusy(true);
     setStatus(refreshed ? "正在刷新热点数据…" : "正在加载最新热点数据…");
     try {
-      const response = await fetch(snapshotUrl(Date.now()), { cache: "no-store" });
-      if (!response.ok) throw new Error(`snapshot request failed: ${response.status}`);
-      const snapshot = validateSnapshot(await response.json());
-      render(snapshot, refreshed);
-    } catch {
-      setStatus("暂时无法读取热点数据，请稍后点击“立即刷新”重试。", "error");
+      const result = await loadSnapshotState({
+        fetchSnapshot: fetch,
+        currentSnapshot: state.snapshot,
+        refreshed,
+        clock: Date.now,
+      });
+      if (result.status === "newer") render(result.snapshot);
+      const banner = bannerForState(result.snapshot, result.status, Date.now(), result.refreshed);
+      setStatus(banner.message, banner.tone);
     } finally {
       setBusy(false);
       elements.refresh.disabled = false;

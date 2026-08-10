@@ -3,7 +3,9 @@
   --page: #f8fafc;
   --card: #ffffff;
   --ink: #26313d;
-  --muted: #687586;
+  --muted: #566474;
+  --small-text: #465566;
+  --focus-ring: #255b87;
   --line: #dfe6ee;
   --line-strong: #cdd7e2;
   --accent: #315f5a;
@@ -71,7 +73,7 @@ img {
 }
 
 :focus-visible {
-  outline: 3px solid #6d9dcd;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -145,7 +147,7 @@ img {
 
 .eyebrow {
   margin: 0 0 3px;
-  color: #748295;
+  color: var(--small-text);
   font-size: 0.68rem;
   font-weight: 750;
   letter-spacing: 0.16em;
@@ -401,7 +403,7 @@ section + section {
 
 .metric-label {
   margin-bottom: 12px;
-  color: #657384;
+  color: var(--small-text);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -432,7 +434,7 @@ section + section {
 
 .topic-family {
   margin-bottom: 20px;
-  color: var(--muted);
+  color: var(--small-text);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -626,6 +628,7 @@ dialog {
   max-height: min(86vh, 860px);
   padding: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--card);
@@ -695,10 +698,27 @@ dialog::backdrop {
 }
 
 .keyword-chip {
+  max-width: 100%;
   padding: 5px 9px;
   background: var(--pastel-purple);
   color: #64557c;
   font-size: 0.72rem;
+}
+
+.lead-content h3,
+.lead-excerpt,
+.lead-meta span,
+.post-excerpt,
+.post-author,
+.dialog-title,
+.dialog-copy,
+.dialog-meta span,
+.keyword-chip,
+.topic-card h3,
+.topic-stats,
+.topic-stats strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {
