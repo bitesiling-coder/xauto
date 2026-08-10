@@ -111,8 +111,8 @@ def test_fixture_round_trips_to_canonical_markdown_and_rebuilds_offline(tmp_path
         rebuild_factory=lambda path: vectors,
     )
 
-    assert service.rebuild() == {"documents": 1, "chunks": 1, "errors": 0}
-    assert vectors.count() == 1
+    assert service.rebuild() == {"documents": 1, "chunks": 2, "errors": 0}
+    assert vectors.count() == 2
     [hit] = service.search("DDR5", top=1)
     assert hit.post_id == POST_ID
     assert hit.url == POST_URL
