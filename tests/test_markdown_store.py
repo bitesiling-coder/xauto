@@ -30,7 +30,10 @@ def make_post(**changes: object) -> Post:
             "quoted body",
             "2026-08-07T00:00:00Z",
             "https://x.com/quoted/status/456",
-            media_urls=("https://pbs.twimg.com/media/quoted",),
+            media_urls=(
+                "https://pbs.twimg.com/media/quoted",
+                "https://video.twimg.com/ext_tw_video/quoted.mp4",
+            ),
         ),
         "local_media": (
             LocalMedia("post", "image", "https://pbs.twimg.com/media/image", "../media/123/image-01.jpg", "image/jpeg"),
@@ -60,6 +63,7 @@ def test_upsert_round_trips_readable_utf8_body_and_media(tmp_path: Path) -> None
     assert "## 引用推文" in content
     assert "> @quoted：quoted body" in content
     assert "![引用图片 1](../media/123/quoted-image-01.jpg)" in content
+    assert "[打开引用原视频](https://video.twimg.com/ext_tw_video/quoted.mp4)" in content
     assert "[查看 X 原文](https://x.com/example/status/123)" in content
     assert store.read(path) == make_post(text="第一段。\n\n第二段。")
 
@@ -93,6 +97,44 @@ legacy body
     assert post.media_posters == ()
     assert post.quoted_post is None
     assert post.local_media == ()
+
+
+def test_round_trip_preserves_text_containing_canonical_markers(tmp_path: Path) -> None:
+    text = (
+        "before\n<!-- xrag:text:start -->\nmiddle\n"
+        "<!-- xrag:text:end -->\nafter"
+    )
+    store = MarkdownStore(tmp_path)
+
+    path = store.upsert(make_post(text=text))
+
+    assert store.read(path).text == text
+
+
+def test_legacy_body_treats_marker_literals_as_plain_text(tmp_path: Path) -> None:
+    path = tmp_path / "legacy.md"
+    body = "before\n<!-- xrag:text:start -->\nmiddle\n<!-- xrag:text:end -->\nafter"
+    path.write_text(
+        """---
+id: legacy
+author: Ada
+author_bio: ''
+created_at: ''
+collected_at: ''
+updated_at: ''
+url: https://x.com/i/status/legacy
+likes: 0
+views: 0
+media_urls: []
+source_keywords: []
+source_type: opencli
+---
+
+""" + body + "\n",
+        encoding="utf-8",
+    )
+
+    assert MarkdownStore(tmp_path).read(path).text == body
 
 
 def test_get_loads_existing_post_and_validates_id(tmp_path: Path) -> None:

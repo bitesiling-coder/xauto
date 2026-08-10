@@ -8,7 +8,12 @@ import re
 
 import yaml
 
-from .markdown_store import _local_media_from_value, _quoted_from_value, extract_body_text
+from .markdown_store import (
+    _is_canonical_metadata,
+    _local_media_from_value,
+    _quoted_from_value,
+    extract_body_text,
+)
 from .models import Post
 
 
@@ -67,7 +72,10 @@ def _load_markdown(path: Path) -> dict[str, object]:
     row = dict(metadata)
     if "id" not in row and _SAFE_ID.fullmatch(path.stem):
         row["id"] = path.stem
-    row["text"] = extract_body_text(content[end + len("\n---\n") :])
+    row["text"] = extract_body_text(
+        content[end + len("\n---\n") :],
+        canonical=_is_canonical_metadata(row),
+    )
     return row
 
 

@@ -101,6 +101,7 @@ class XragService:
             with self._vector_session() as vectors:
                 for item in posts:
                     try:
+                        self.markdown.validate_target(self._post_id(item))
                         item = self._archive_media(item, counts)
                         path = self.markdown.upsert(item)
                         counts["stored"] += 1
@@ -162,6 +163,7 @@ class XragService:
                         continue
                     for item in posts:
                         try:
+                            self.markdown.validate_target(self._post_id(item))
                             item = self._archive_media(item, counts)
                             markdown_path = self.markdown.upsert(item)
                             counts["imported"] += 1

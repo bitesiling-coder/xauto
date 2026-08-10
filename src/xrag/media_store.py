@@ -101,6 +101,7 @@ class MediaStore:
                 continue
             try:
                 _validate_post_id(post.id)
+                self._validated_post_directory(post.id, create=False)
                 _validate_source_url(source.url)
                 existing = self._existing_media(post, source)
                 if existing is not None:
@@ -123,7 +124,7 @@ class MediaStore:
         )
 
     def _existing_media(self, post: Post, source: _Source) -> LocalMedia | None:
-        post_directory = (self.directory / post.id).resolve()
+        post_directory = self._validated_post_directory(post.id, create=False).resolve()
         for item in post.local_media:
             if (
                 item.owner != source.owner
@@ -157,8 +158,7 @@ class MediaStore:
                 if content_length is not None and content_length > self.max_bytes:
                     raise MediaValidationError("media file exceeds size limit")
 
-                post_directory = self.directory / post_id
-                post_directory.mkdir(parents=True, exist_ok=True)
+                post_directory = self._validated_post_directory(post_id, create=True)
                 target = post_directory / f"{source.stem}{extension}"
                 with tempfile.NamedTemporaryFile(
                     mode="wb",
@@ -179,6 +179,9 @@ class MediaStore:
                         temporary_file.write(chunk)
                     temporary_file.flush()
                     os.fsync(temporary_file.fileno())
+                verified_directory = self._validated_post_directory(post_id, create=False)
+                if verified_directory.resolve() != post_directory.resolve():
+                    raise MediaValidationError("media directory changed during download")
                 os.replace(temporary_path, target)
                 temporary_path = None
                 return LocalMedia(
@@ -191,6 +194,31 @@ class MediaStore:
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    def _validated_post_directory(self, post_id: str, *, create: bool) -> Path:
+        _validate_post_id(post_id)
+        if self.directory.is_symlink():
+            raise MediaValidationError("media root must not be a symbolic link")
+        if create:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        if self.directory.exists():
+            if not self.directory.is_dir() or self.directory.is_symlink():
+                raise MediaValidationError("media root is not a safe directory")
+            for candidate in self.directory.iterdir():
+                if candidate.name.casefold() == post_id.casefold() and candidate.name != post_id:
+                    raise MediaValidationError("case-insensitive media directory collision")
+
+        post_directory = self.directory / post_id
+        if post_directory.is_symlink():
+            raise MediaValidationError("post media directory must not be a symbolic link")
+        if create:
+            post_directory.mkdir(parents=True, exist_ok=True)
+        if post_directory.exists():
+            if not post_directory.is_dir() or post_directory.is_symlink():
+                raise MediaValidationError("post media path is not a safe directory")
+            if post_directory.resolve().parent != self.directory.resolve():
+                raise MediaValidationError("post media directory escapes media root")
+        return post_directory
 
 
 def _sources(post: Post) -> Iterable[_Source]:

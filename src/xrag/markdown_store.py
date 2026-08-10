@@ -41,7 +41,7 @@ class MarkdownStore:
     def upsert(self, post: Post) -> Path:
         path = self._path_for(post.id)
         self.directory.mkdir(parents=True, exist_ok=True)
-        self._ensure_no_casefold_collision(post.id)
+        self.validate_target(post.id)
         now = self._clock()
         keywords = post.source_keywords
         collected_at = now
@@ -80,6 +80,7 @@ class MarkdownStore:
             "media_posters": list(normalized.media_posters),
             "local_media": [_local_media_to_mapping(item) for item in normalized.local_media],
             "quoted_tweet": _quoted_to_mapping(normalized.quoted_post),
+            "body_format": "xrag-v1",
             "source_keywords": list(normalized.source_keywords),
             "source_type": normalized.source_type,
         }
@@ -95,7 +96,7 @@ class MarkdownStore:
             return Post(
                 id=_scalar(metadata["id"], "id"),
                 author=_scalar(metadata["author"], "author"),
-                text=extract_body_text(body),
+                text=extract_body_text(body, canonical=_is_canonical_metadata(metadata)),
                 created_at=_scalar(metadata["created_at"], "created_at"),
                 url=_scalar(metadata["url"], "url"),
                 bio=_scalar(metadata["author_bio"], "author_bio"),
@@ -114,6 +115,11 @@ class MarkdownStore:
     def get(self, post_id: str) -> Post | None:
         path = self._path_for(post_id)
         return self.read(path) if path.is_file() else None
+
+    def validate_target(self, post_id: str) -> Path:
+        path = self._path_for(post_id)
+        self._ensure_no_casefold_collision(post_id)
+        return path
 
     def iter_posts(self) -> Iterator[tuple[Path, Post]]:
         if not self.directory.is_dir():
@@ -176,7 +182,9 @@ class MarkdownStore:
         return metadata, content[end + len("\n---\n") :].lstrip("\n")
 
 
-def extract_body_text(body: str) -> str:
+def extract_body_text(body: str, *, canonical: bool = True) -> str:
+    if not canonical:
+        return body.strip()
     has_start = _TEXT_START in body
     has_end = _TEXT_END in body
     if not has_start and not has_end:
@@ -184,8 +192,8 @@ def extract_body_text(body: str) -> str:
     if not has_start or not has_end:
         raise ValueError("invalid canonical Markdown text markers")
     start = body.find(_TEXT_START)
-    end = body.find(_TEXT_END, start + len(_TEXT_START))
-    if end < 0:
+    end = body.rfind(_TEXT_END)
+    if end < start + len(_TEXT_START):
         raise ValueError("invalid canonical Markdown text markers")
     return body[start + len(_TEXT_START) : end].strip("\n")
 
@@ -221,6 +229,9 @@ def _render_body(post: Post) -> str:
         quoted_media = [item for item in post.local_media if item.owner == "quoted"]
         if quoted_media:
             lines.extend(["", *_render_media(quoted_media, quoted=True)])
+        for url in post.quoted_post.media_urls:
+            if _is_video_url(url):
+                lines.extend(["", f"[打开引用原视频]({url})"])
         lines.extend(["", f"[查看引用推文]({post.quoted_post.url})"])
     lines.extend(["", f"[查看 X 原文]({post.url})", ""])
     return "\n".join(lines)
@@ -252,6 +263,12 @@ def _render_media(items: list[LocalMedia], *, quoted: bool) -> list[str]:
 
 def _is_video_url(url: str) -> bool:
     return url.lower().startswith("https://video.twimg.com/")
+
+
+def _is_canonical_metadata(metadata: dict[str, object]) -> bool:
+    return metadata.get("body_format") == "xrag-v1" or any(
+        field in metadata for field in ("media_posters", "local_media", "quoted_tweet")
+    )
 
 
 def _quoted_to_mapping(value: QuotedPost | None) -> dict[str, object] | None:

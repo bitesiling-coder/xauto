@@ -256,3 +256,46 @@ def test_failed_replacement_preserves_existing_file(tmp_path: Path) -> None:
     assert len(result.failures) == 1
     assert target.read_bytes() == b"existing"
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_archive_rejects_casefold_colliding_media_directory_before_opening(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "media"
+    existing = directory / "ABC/image-01.jpg"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"preserve")
+    calls: list[str] = []
+
+    def open_url(request: Request, timeout: float) -> FakeResponse:
+        calls.append(request.full_url)
+        raise AssertionError("collision must be rejected before opening")
+
+    result = MediaStore(directory, open_url=open_url).archive(
+        make_post(id="abc", media_urls=("https://pbs.twimg.com/media/source",))
+    )
+
+    assert len(result.failures) == 1
+    assert calls == []
+    assert existing.read_bytes() == b"preserve"
+
+
+def test_archive_rejects_symlinked_post_directory(tmp_path: Path) -> None:
+    directory = tmp_path / "media"
+    outside = tmp_path / "outside"
+    directory.mkdir()
+    outside.mkdir()
+    try:
+        (directory / "123").symlink_to(outside, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("directory symlinks are unavailable")
+
+    def open_url(request: Request, timeout: float) -> FakeResponse:
+        return FakeResponse(b"image", "image/jpeg", request.full_url)
+
+    result = MediaStore(directory, open_url=open_url).archive(
+        make_post(media_urls=("https://pbs.twimg.com/media/source",))
+    )
+
+    assert len(result.failures) == 1
+    assert not list(outside.iterdir())

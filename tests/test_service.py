@@ -203,6 +203,21 @@ def test_recollect_passes_existing_media_mapping_to_archiver(tmp_path: Path) -> 
     assert media.archived[0].local_media == existing.local_media
 
 
+def test_casefold_collision_is_rejected_before_media_archival(tmp_path: Path) -> None:
+    media = Media()
+    service = make_service(tmp_path, OpenCLI([post("abc")]), Vectors(), media)
+    service.markdown.upsert(post("ABC"))
+    existing_media = tmp_path / "data/media/ABC/image-01.jpg"
+    existing_media.parent.mkdir(parents=True)
+    existing_media.write_bytes(b"preserve")
+
+    result = service.collect("AI")
+
+    assert result == {"found": 1, "stored": 0, "chunks": 0, "errors": 1}
+    assert media.archived == []
+    assert existing_media.read_bytes() == b"preserve"
+
+
 def test_import_non_x_media_counts_failure_but_keeps_text(tmp_path: Path) -> None:
     source = tmp_path / "import.yaml"
     source.write_text(
