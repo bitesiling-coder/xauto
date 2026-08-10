@@ -75,7 +75,7 @@ def rank_posts(
     local_now = now.astimezone(local_timezone)
     keywords = tuple(configured_keywords)
     prepared: list[_PreparedPost] = []
-    for post in _deduplicate(posts):
+    for post in posts:
         topic = _assign_topic(post, keywords)
         published_at = _parse_timestamp(post.created_at)
         if topic is None or published_at is None:
@@ -91,6 +91,7 @@ def rank_posts(
                 == local_now.date(),
             )
         )
+    prepared = _deduplicate(prepared)
 
     today_count = sum(item.is_today for item in prepared)
     if today_count >= minimum_today:
@@ -148,7 +149,7 @@ def rank_posts(
     selected: list[RankedPost] = []
     author_counts: dict[str, int] = {}
     for item, _ in ranked:
-        author_key = item.post.author.casefold()
+        author_key = item.post.author.strip().casefold() or "unknown"
         if author_counts.get(author_key, 0) >= max_per_author:
             continue
         author_counts[author_key] = author_counts.get(author_key, 0) + 1
@@ -186,29 +187,30 @@ def _parse_timestamp(value: str) -> datetime | None:
     return parsed
 
 
-def _deduplicate(posts: Iterable[Post]) -> list[Post]:
-    by_id = _retain_best(posts, lambda post: post.id.strip().casefold())
-    return _retain_best(by_id, lambda post: post.url.strip().casefold())
+def _deduplicate(posts: Iterable[_PreparedPost]) -> list[_PreparedPost]:
+    by_id = _retain_best(posts, lambda item: item.post.id.strip().casefold())
+    return _retain_best(by_id, lambda item: item.post.url.strip().casefold())
 
 
 def _retain_best(
-    posts: Iterable[Post], key_function: Callable[[Post], str]
-) -> list[Post]:
-    keyed: dict[str, tuple[int, Post]] = {}
-    unkeyed: list[tuple[int, Post]] = []
-    for index, post in enumerate(posts):
-        key = key_function(post)
+    posts: Iterable[_PreparedPost],
+    key_function: Callable[[_PreparedPost], str],
+) -> list[_PreparedPost]:
+    keyed: dict[str, tuple[int, _PreparedPost]] = {}
+    unkeyed: list[tuple[int, _PreparedPost]] = []
+    for index, item in enumerate(posts):
+        key = key_function(item)
         if not key:
-            unkeyed.append((index, post))
+            unkeyed.append((index, item))
             continue
         current = keyed.get(key)
         if current is None:
-            keyed[key] = (index, post)
-        elif _dedupe_quality(post) > _dedupe_quality(current[1]):
-            keyed[key] = (current[0], post)
+            keyed[key] = (index, item)
+        elif _dedupe_quality(item.post) > _dedupe_quality(current[1].post):
+            keyed[key] = (current[0], item)
     retained = [*keyed.values(), *unkeyed]
     retained.sort(key=lambda item: item[0])
-    return [post for _, post in retained]
+    return [item for _, item in retained]
 
 
 def _dedupe_quality(post: Post) -> tuple[float, int, int, int]:

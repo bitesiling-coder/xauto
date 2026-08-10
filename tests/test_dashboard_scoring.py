@@ -254,6 +254,76 @@ def test_deduplicates_id_then_normalized_url_keeping_more_complete_record() -> N
     assert {item.post.id for item in ranked} == {"same", "url-rich"}
 
 
+def test_ineligible_richer_id_duplicate_cannot_suppress_valid_candidate() -> None:
+    media = (
+        LocalMedia(
+            "post",
+            "image",
+            "https://pbs.twimg.com/media/richer-id",
+            "../media/richer-id.jpg",
+            "image/jpeg",
+        ),
+    )
+    valid = post(
+        "same-id",
+        text="valid",
+        author="",
+        url="https://x.com/status/valid-id",
+    )
+    richer_but_invalid = post(
+        "SAME-ID",
+        text="richer but invalid",
+        created_at="not-a-date",
+        url="https://x.com/status/invalid-id",
+        local_media=media,
+    )
+
+    ranked = rank_posts(
+        [valid, richer_but_invalid],
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+
+    assert [item.post for item in ranked] == [valid]
+
+
+def test_ineligible_richer_url_duplicate_cannot_suppress_valid_candidate() -> None:
+    media = (
+        LocalMedia(
+            "post",
+            "image",
+            "https://pbs.twimg.com/media/richer-url",
+            "../media/richer-url.jpg",
+            "image/jpeg",
+        ),
+    )
+    valid = post(
+        "valid-url",
+        text="valid",
+        author="",
+        url="https://x.com/status/shared-eligibility",
+    )
+    richer_but_unknown = post(
+        "unknown-url",
+        text="richer but unknown",
+        url=" HTTPS://X.COM/STATUS/SHARED-ELIGIBILITY ",
+        source_keywords=("not configured",),
+        local_media=media,
+    )
+
+    ranked = rank_posts(
+        [valid, richer_but_unknown],
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+
+    assert [item.post for item in ranked] == [valid]
+
+
 @pytest.mark.parametrize("dedupe_path", ["id", "url"])
 @pytest.mark.parametrize(
     ("loser_values", "winner_values"),
@@ -336,6 +406,30 @@ def test_enforces_casefolded_author_cap_and_result_limit() -> None:
 
     assert len(ranked) == 4
     assert sum(item.post.author.casefold() == "ada" for item in ranked) == 3
+
+
+def test_author_cap_strips_whitespace_and_casefolds_to_one_quota() -> None:
+    items = [
+        post("ada-1", author="Ada", views=100),
+        post("ada-2", author=" Ada ", views=90),
+        post("ada-3", author="ADA", views=80),
+        post("ada-4", author="ada", views=70),
+        post("bob", author="Bob", views=60),
+    ]
+
+    ranked = rank_posts(
+        items,
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+        limit=5,
+        max_per_author=3,
+    )
+
+    assert len(ranked) == 4
+    assert sum(item.post.author.strip().casefold() == "ada" for item in ranked) == 3
+    assert any(item.post.id == "bob" for item in ranked)
 
 
 def test_equal_topic_strength_uses_configured_priority_not_source_order() -> None:
