@@ -201,6 +201,9 @@ def test_build_writes_exact_public_schema_topics_static_files_and_utf8(tmp_path:
         "https://x.com.evil.test/status/1",
         "https://user@x.com/status/1",
         "https://user:pass@twitter.com/status/1",
+        "https://x.com:abc/status/1",
+        "https://x.com:99999/status/1",
+        "https://x.com:8443/status/1",
     ],
 )
 def test_invalid_or_credentialed_non_x_url_preserves_latest(
@@ -214,6 +217,18 @@ def test_invalid_or_credentialed_non_x_url_preserves_latest(
         build(tmp_path)
 
     assert latest.read_bytes() == previous
+
+
+def test_default_https_port_is_a_valid_x_url(tmp_path: Path) -> None:
+    prepare_static(tmp_path)
+    url = "https://x.com:443/ada/status/1"
+    save_post(tmp_path, url=url)
+
+    output_path = build(tmp_path)["output_path"]
+
+    assert isinstance(output_path, Path)
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["posts"][0]["url"] == url
 
 
 @pytest.mark.parametrize(

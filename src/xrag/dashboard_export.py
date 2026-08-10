@@ -214,6 +214,7 @@ def _validate_x_url(url: str) -> None:
     try:
         parsed = urlsplit(url)
         hostname = parsed.hostname
+        port = parsed.port
     except (TypeError, ValueError) as error:
         raise ValueError("invalid X URL") from error
     if (
@@ -222,6 +223,7 @@ def _validate_x_url(url: str) -> None:
         or parsed.scheme.casefold() != "https"
         or parsed.username is not None
         or parsed.password is not None
+        or port not in {None, 443}
         or hostname is None
         or hostname.casefold()
         not in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}
