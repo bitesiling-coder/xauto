@@ -94,7 +94,7 @@ find data/media -mindepth 2 -maxdepth 2 -type f -print
 
 ## 公开热点看板
 
-看板只读取现有的权威 Markdown 和本地媒体，从中选出当天（不足时回溯最近 48 小时）的 AI/Web3 热点，并生成白色底、淡色卡片的静态网页。它不修改、移动或删除 `data/markdown/`、`data/media/`、`data/imports/`、`data/chroma/` 或 `logs/` 中的现有内容。
+看板从现有的权威 Markdown 和本地媒体中选出当天（不足时回溯最近 48 小时）的 AI/Web3 热点，并生成白色底、淡色卡片的静态网页。`dashboard build` 和 `dashboard publish` 对权威 archive 只读；前者只写入 Git 忽略的 `data/dashboard-site/`，后者还会更新专用的 `gh-pages` 发布 worktree 和远程分支。`dashboard update` 会先执行采集，因此可能在项目的 `data/` 与 `logs/` 下新增或更新 Markdown、媒体、Chroma 索引、`last-run.json` 和日志，但不会删除来源数据或电脑中的其他文件。
 
 在 WSL 项目根目录中运行：
 
@@ -124,7 +124,7 @@ xrag --root . dashboard update
 
 本地生成目录是 `data/dashboard-site/`，已被 Git 忽略。发布器使用项目内专用的 `.worktrees/x-rag-pages/` 链接 worktree，把经过白名单校验的公开文件复制到 `gh-pages`；它不使用带删除功能的目录同步，也不会清理来源数据。带日期的 JSON 快照和按内容哈希命名的媒体会持续累积，因此需要定期监控本地磁盘与 `gh-pages` 仓库大小；如需制定历史保留策略，请先单独审核，不要直接对数据目录做递归删除。
 
-公开输出采用字段白名单，并在提交前扫描凭据和本地绝对路径。如果检测到 `auth_token`、`ct0`、其他凭据形式或 Windows/WSL 本地路径，发布会中止，已有线上 `latest.json` 保持不变。此时检查命令报错所指的源 Markdown/公开字段，在本地修正敏感内容后重新构建；不要把 token 粘贴到命令、配置、Markdown、日志或问题报告中。
+公开输出采用字段白名单，并在提交前扫描凭据和本地绝对路径。如果检测到 `auth_token`、`ct0`、其他凭据形式或 Windows/WSL 本地路径，发布会中止，已有线上 `latest.json` 保持不变。安全错误会统一脱敏，通常不会指出具体源字段；请只在本机用编辑器搜索最近新增或变更的 Markdown 中是否出现 `auth_token`、`ct0`、`authorization`、`api_key`、`password`、`secret` 等键名或本地绝对路径，修正后先重新运行 `dashboard build`。不要把凭据值粘贴到搜索命令、配置、Markdown、日志、聊天或问题报告中，也不要复制可能包含凭据的匹配行。
 
 ## 导入格式
 

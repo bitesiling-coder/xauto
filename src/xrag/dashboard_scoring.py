@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import math
 import re
@@ -156,7 +156,10 @@ def rank_posts(
         ranked.append(
             (
                 RankedPost(
-                    post=item.post,
+                    post=replace(
+                        item.post,
+                        created_at=item.published_at.isoformat(),
+                    ),
                     topic=item.topic,
                     score=score,
                     engagement=engagement,
