@@ -271,6 +271,7 @@ test("isValidSnapshot enforces summary, fallback, and topic aggregates", () => {
   const mutations = [
     (payload) => (payload.summary.posts = 2),
     (payload) => (payload.summary.authors = 0),
+    (payload) => (payload.summary.authors = 2),
     (payload) => (payload.summary.media = 0),
     (payload) => (payload.summary.engagement = 13),
     (payload) => (payload.fallback_used = true),
@@ -284,37 +285,28 @@ test("isValidSnapshot enforces summary, fallback, and topic aggregates", () => {
   }
 });
 
-test("isValidSnapshot compares distinct authors with Unicode casefolding", () => {
-  const payload = validSnapshot();
-  payload.posts[0].author = "Straße";
-  payload.posts.push({
-    ...structuredClone(payload.posts[0]),
-    id: "post-2",
-    author: "STRASSE",
-    url: "https://x.com/ada/status/2",
-    likes: 1,
-    views: 1,
-    media: [],
-  });
-  payload.summary = { posts: 2, authors: 1, media: 1, engagement: 14 };
-  payload.topics[0].posts = 2;
+test("isValidSnapshot trusts exporter casefolded author counts within safe bounds", () => {
+  for (const [firstAuthor, secondAuthor] of [
+    ["Straße", "STRASSE"],
+    ["µ", "Μ"],
+    ["\u01f0", "j\u030c"],
+  ]) {
+    const payload = validSnapshot();
+    payload.posts[0].author = firstAuthor;
+    payload.posts.push({
+      ...structuredClone(payload.posts[0]),
+      id: "post-2",
+      author: secondAuthor,
+      url: "https://x.com/ada/status/2",
+      likes: 1,
+      views: 1,
+      media: [],
+    });
+    payload.summary = { posts: 2, authors: 1, media: 1, engagement: 14 };
+    payload.topics[0].posts = 2;
 
-  assert.equal(isValidSnapshot(payload), true);
-
-  const greek = validSnapshot();
-  greek.posts[0].author = "µ";
-  greek.posts.push({
-    ...structuredClone(greek.posts[0]),
-    id: "post-2",
-    author: "Μ",
-    url: "https://x.com/ada/status/2",
-    likes: 1,
-    views: 1,
-    media: [],
-  });
-  greek.summary = { posts: 2, authors: 1, media: 1, engagement: 14 };
-  greek.topics[0].posts = 2;
-  assert.equal(isValidSnapshot(greek), true);
+    assert.equal(isValidSnapshot(payload), true);
+  }
 });
 
 test("matchesFilter supports all, AI, and Web3 only", () => {

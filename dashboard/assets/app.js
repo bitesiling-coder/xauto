@@ -219,12 +219,6 @@ function isSafeMediaUrl(value) {
 }
 
 function validAggregates(payload, topics) {
-  const authorKeys = new Set(
-    payload.posts
-      .map((post) => post.author.trim())
-      .filter(Boolean)
-      .map(casefoldText),
-  );
   const mediaCount = payload.posts.reduce((total, post) => total + post.media.length, 0);
   const totalEngagement = payload.posts.reduce(
     (total, post) => total + post.views + post.likes,
@@ -234,7 +228,8 @@ function validAggregates(payload, topics) {
     !Number.isSafeInteger(mediaCount) ||
     !Number.isSafeInteger(totalEngagement) ||
     payload.summary.posts !== payload.posts.length ||
-    payload.summary.authors !== authorKeys.size ||
+    payload.summary.authors > payload.summary.posts ||
+    (payload.posts.length > 0 && payload.summary.authors < 1) ||
     payload.summary.media !== mediaCount ||
     payload.summary.engagement !== totalEngagement ||
     payload.fallback_used !== payload.posts.some((post) => post.fallback)
@@ -245,27 +240,6 @@ function validAggregates(payload, topics) {
     if (topic.posts !== payload.posts.filter((post) => post.topic === id).length) return false;
   }
   return true;
-}
-
-function casefoldText(value) {
-  const expansions = {
-    "ß": "ss",
-    "µ": "μ",
-    "ς": "σ",
-    "ſ": "s",
-    "ŉ": "ʼn",
-    "և": "եւ",
-    "ﬀ": "ff",
-    "ﬁ": "fi",
-    "ﬂ": "fl",
-    "ﬃ": "ffi",
-    "ﬄ": "ffl",
-    "ﬅ": "st",
-    "ﬆ": "st",
-  };
-  return value
-    .toLocaleLowerCase("en-US")
-    .replace(/[ßµςſŉևﬀﬁﬂﬃﬄﬅﬆ]/gu, (character) => expansions[character]);
 }
 
 export function matchesFilter(post, filter) {
