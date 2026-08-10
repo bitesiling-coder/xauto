@@ -34,7 +34,44 @@ def test_parse_search_yaml_normalizes_a_search_result() -> None:
     assert post.likes == 5
     assert post.views == 1739
     assert post.media_urls == ("https://pbs.twimg.com/media/DDR5-example.jpg",)
+    assert post.media_posters == ("https://pbs.twimg.com/media/DDR5-poster.jpg",)
+    assert post.quoted_post is not None
+    assert post.quoted_post.id == "2084640002085130000"
+    assert post.quoted_post.author == "quoted_author"
+    assert post.quoted_post.text == "quoted text"
+    assert post.quoted_post.media_urls == (
+        "https://pbs.twimg.com/media/quoted-image.jpg",
+    )
+    assert post.quoted_post.media_posters == (
+        "https://pbs.twimg.com/media/quoted-poster.jpg",
+    )
     assert post.source_keywords == ("DDR5",)
+
+
+def test_parser_ignores_invalid_and_nested_quoted_posts() -> None:
+    posts = parse_search_yaml(
+        """
+- id: "1"
+  text: main
+  quoted_tweet:
+    id: "2"
+    author: quoted
+    text: quoted body
+    quoted_tweet:
+      id: "3"
+      text: must not recurse
+- id: "4"
+  text: second
+  quoted_tweet:
+    id: not-numeric
+    text: ignored
+""",
+        "AI",
+    )
+
+    assert posts[0].quoted_post is not None
+    assert not hasattr(posts[0].quoted_post, "quoted_post")
+    assert posts[1].quoted_post is None
 
 
 def test_parse_search_yaml_skips_malformed_rows_and_uses_fallbacks() -> None:

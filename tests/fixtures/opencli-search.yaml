@@ -7,5 +7,16 @@
   url: "https://x.com/0xQiYan/status/2084640002085130466"
   media_urls:
     - "https://pbs.twimg.com/media/DDR5-example.jpg"
+  media_posters:
+    - "https://pbs.twimg.com/media/DDR5-poster.jpg"
   card: null
-  quoted_tweet: null
+  quoted_tweet:
+    id: "2084640002085130000"
+    author: "quoted_author"
+    text: "quoted text"
+    created_at: "2026-08-07T08:00:00Z"
+    url: "https://x.com/quoted_author/status/2084640002085130000"
+    media_urls:
+      - "https://pbs.twimg.com/media/quoted-image.jpg"
+    media_posters:
+      - "https://pbs.twimg.com/media/quoted-poster.jpg"
