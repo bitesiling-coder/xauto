@@ -269,6 +269,12 @@ def test_daily_runner_is_kept_with_lf_line_endings_by_git() -> None:
     assert result.stdout.strip().endswith("eol: lf")
 
 
+def test_runtime_media_directory_is_ignored_by_git() -> None:
+    patterns = PROJECT_ROOT.joinpath(".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert "data/media/" in patterns
+
+
 def translate_with_wsl(path: Path) -> str:
     if os.name != "nt":
         return str(path)

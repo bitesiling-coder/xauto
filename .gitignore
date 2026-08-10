@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 data/markdown/
 data/imports/
+data/media/
 data/chroma/
 logs/
 .xrag.lock
