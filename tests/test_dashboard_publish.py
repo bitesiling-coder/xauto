@@ -59,10 +59,10 @@ class FakeRunner:
         self.failures = failures or {}
         self.index_oid_override = index_oid_override
         self.prepared_content = fake_prepared_content(root)
-        self.calls: list[tuple[list[str], Path, str | None]] = []
+        self.calls: list[tuple[list[str], Path, str | bytes | None]] = []
 
     def __call__(
-        self, command: list[str], cwd: Path, input_text: str | None
+        self, command: list[str], cwd: Path, input_text: str | bytes | None
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append((list(command), Path(cwd), input_text))
         key = tuple(command)
@@ -132,15 +132,21 @@ class FakeRunner:
             return self._result(command, 0, entries)
         if command[:4] == ["git", "diff", "--cached", "--quiet"]:
             return self._result(command, self.diff_code)
-        if command[:7] == [
+        if command == [
             "git",
             "-c",
             "core.autocrlf=false",
             "-c",
             "core.safecrlf=false",
             "add",
-            "--",
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
         ]:
+            expected = "".join(
+                f":(literal){path}\0" for path in self.prepared_content
+            )
+            if input_text != expected:
+                raise AssertionError("unexpected fake Git add pathspec input")
             return self._result(command)
         if command == [
             "git",
@@ -293,9 +299,15 @@ def test_existing_clean_worktree_copies_allowlist_commits_and_pushes(
         "-c",
         "core.safecrlf=false",
         "add",
-        "--",
-        *(f":(literal){path}" for path in fake_prepared_paths(tmp_path)),
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
     ] in runner.commands()
+    add_call = next(
+        call for call in runner.calls if has_git_subcommand(call[0], "add")
+    )
+    assert add_call[2] == "".join(
+        f":(literal){path}\0" for path in fake_prepared_paths(tmp_path)
+    )
     assert [
         "git",
         "commit",
@@ -728,10 +740,12 @@ def test_worktree_is_revalidated_before_each_write(
     original_replace = module.os.replace
     swapped = False
 
-    def replace_then_swap(source: object, destination: object) -> None:
+    def replace_then_swap(
+        source: object, destination: object, *args: object, **kwargs: object
+    ) -> None:
         nonlocal swapped
-        original_replace(source, destination)  # type: ignore[arg-type]
-        if not swapped and Path(destination) == worktree / ".nojekyll":
+        original_replace(source, destination, *args, **kwargs)  # type: ignore[arg-type]
+        if not swapped and Path(destination).name == ".nojekyll":
             worktree.rename(parked)
             try:
                 os.symlink(external, worktree, target_is_directory=True)
@@ -742,7 +756,7 @@ def test_worktree_is_revalidated_before_each_write(
 
     monkeypatch.setattr(module.os, "replace", replace_then_swap)
     try:
-        with pytest.raises(ValueError, match="target"):
+        with pytest.raises((OSError, ValueError)):
             publisher(tmp_path, worktree, runner).publish(site)
         assert list(external.iterdir()) == []
     finally:
@@ -751,7 +765,70 @@ def test_worktree_is_revalidated_before_each_write(
             parked.rename(worktree)
 
 
-def test_startup_removes_only_strict_regular_publisher_temp(tmp_path: Path) -> None:
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction race regression")
+def test_windows_parent_junction_swap_cannot_open_external_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.dashboard_publish as module
+
+    site = prepare_site(tmp_path)
+    worktree = prepare_existing_worktree(tmp_path)
+    external = tmp_path / "external-assets"
+    external.mkdir()
+    sentinel = external / "app.js"
+    sentinel.write_bytes(b"external sentinel")
+    parked = tmp_path / "parked-assets"
+    runner = FakeRunner(tmp_path, worktree)
+    original_open = module.os.open
+    swapped = False
+    external_temp_open_attempted = False
+
+    def swap_before_temp_open(
+        path: object,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped, external_temp_open_attempted
+        candidate = Path(path) if not isinstance(path, int) else None
+        assets = worktree / "assets"
+        if (
+            not swapped
+            and candidate is not None
+            and candidate.parent == assets
+            and candidate.name.startswith(".xrag-publish-")
+            and candidate.name.endswith(".tmp")
+        ):
+            assets.rename(parked)
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(assets), str(external)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                parked.rename(assets)
+                pytest.skip(f"junctions unavailable: {result.stderr or result.stdout}")
+            swapped = True
+            external_temp_open_attempted = True
+        if dir_fd is None:
+            return original_open(path, flags, mode)  # type: ignore[arg-type]
+        return original_open(path, flags, mode, dir_fd=dir_fd)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(module.os, "open", swap_before_temp_open)
+    try:
+        with pytest.raises((OSError, ValueError)):
+            publisher(tmp_path, worktree, runner).publish(site)
+        assert not external_temp_open_attempted
+        assert sentinel.read_bytes() == b"external sentinel"
+    finally:
+        if swapped:
+            (worktree / "assets").rmdir()
+            parked.rename(worktree / "assets")
+
+
+def test_startup_preserves_unproven_publisher_temp_lookalikes(tmp_path: Path) -> None:
     site = prepare_site(tmp_path)
     worktree = prepare_existing_worktree(tmp_path)
     assets = worktree / "assets"
@@ -764,11 +841,27 @@ def test_startup_removes_only_strict_regular_publisher_temp(tmp_path: Path) -> N
 
     publisher(tmp_path, worktree, runner).publish(site)
 
-    assert not owned.exists()
+    assert owned.read_bytes() == b"incomplete publisher write"
     assert lookalike.read_bytes() == b"user file"
 
 
-def test_publisher_temp_symlink_is_rejected_without_touching_target(
+def test_real_unrelated_temp_lookalike_is_never_removed(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    initialize_project_repository(root)
+    site = prepare_site(root)
+    worktree = root / ".worktrees" / "x-rag-pages"
+    initialize_linked_pages_worktree(root, worktree)
+    unrelated = worktree / "unrelated" / f".xrag-publish-{'c' * 32}.tmp"
+    unrelated.parent.mkdir()
+    unrelated.write_bytes(b"user-owned sentinel")
+
+    with pytest.raises(RuntimeError, match="safely resumable"):
+        PagesPublisher(root, worktree, clock=lambda: NOW).publish(site)
+
+    assert unrelated.read_bytes() == b"user-owned sentinel"
+
+
+def test_unproven_publisher_temp_symlink_is_preserved_without_touching_target(
     tmp_path: Path,
 ) -> None:
     site = prepare_site(tmp_path)
@@ -782,11 +875,10 @@ def test_publisher_temp_symlink_is_rejected_without_touching_target(
         pytest.skip(f"symlinks unavailable: {error}")
     runner = FakeRunner(tmp_path, worktree)
 
-    with pytest.raises(ValueError, match="temporary"):
-        publisher(tmp_path, worktree, runner).publish(site)
+    publisher(tmp_path, worktree, runner).publish(site)
 
     assert external.read_bytes() == b"sentinel"
-    assert not any(has_git_subcommand(command, "add") for command in runner.commands())
+    assert linked_temp.is_symlink()
 
 
 def test_source_substitution_after_preparation_does_not_change_copied_bytes(
@@ -812,6 +904,32 @@ def test_source_substitution_after_preparation_does_not_change_copied_bytes(
 
     assert substituted
     assert (worktree / "assets" / "app.js").read_bytes() == expected
+
+
+def test_source_replacement_between_walk_and_open_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.dashboard_publish as module
+
+    site = prepare_site(tmp_path)
+    source = site / "assets" / "app.js"
+    worktree = prepare_existing_worktree(tmp_path)
+    runner = FakeRunner(tmp_path, worktree)
+    original_walk = module._walk_real_tree
+
+    def walk_then_replace(root: Path, label: str) -> object:
+        discovered = original_walk(root, label)
+        replacement = source.with_name("replacement.js")
+        replacement.write_text("const replacement = true;\n", encoding="utf-8")
+        os.replace(replacement, source)
+        return discovered
+
+    monkeypatch.setattr(module, "_walk_real_tree", walk_then_replace)
+
+    with pytest.raises(ValueError, match="source"):
+        publisher(tmp_path, worktree, runner).publish(site)
+
+    assert runner.calls == []
 
 
 def test_source_hard_link_is_rejected_before_git(tmp_path: Path) -> None:
@@ -958,6 +1076,8 @@ def test_missing_identity_aborts_before_normal_commit(
 
     assert str(caught.value) == "Git command var failed with exit code 128"
     assert "secret" not in str(caught.value)
+    assert not worktree.joinpath("index.html").exists()
+    assert not any(has_git_subcommand(command, "add") for command in runner.commands())
     assert not any(command[:2] == ["git", "commit"] for command in runner.commands())
 
 
@@ -1038,6 +1158,19 @@ def test_default_runner_uses_text_utf8_capture_and_no_check(
     }
 
 
+def test_default_runner_accepts_utf8_bytes_input(tmp_path: Path) -> None:
+    import xrag.dashboard_publish as module
+
+    real_git(tmp_path, "init")
+
+    result = module._default_runner(
+        ["git", "hash-object", "--stdin"], tmp_path, b"payload"
+    )
+
+    assert result.returncode == 0
+    assert isinstance(result.stdout, str)
+
+
 def real_git(
     cwd: Path, *arguments: str, input_text: str | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -1079,6 +1212,74 @@ def initialize_linked_pages_worktree(root: Path, worktree: Path) -> None:
     real_git(root, "branch", "gh-pages", commit)
     worktree.parent.mkdir(parents=True, exist_ok=True)
     real_git(root, "worktree", "add", str(worktree), "gh-pages")
+
+
+def test_real_am_user_staged_blob_is_not_claimed_as_recoverable(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "project"
+    initialize_project_repository(root)
+    site = prepare_site(root)
+    worktree = root / ".worktrees" / "x-rag-pages"
+    initialize_linked_pages_worktree(root, worktree)
+    target = worktree / "index.html"
+    target.write_text("user staged content\n", encoding="utf-8")
+    real_git(worktree, "add", "--", "index.html")
+    staged_before = real_git(worktree, "show", ":index.html").stdout
+    target.write_bytes((site / "index.html").read_bytes())
+    assert real_git(worktree, "status", "--porcelain=v1").stdout.startswith(
+        "AM index.html"
+    )
+
+    with pytest.raises(RuntimeError, match="safely resumable"):
+        PagesPublisher(root, worktree, clock=lambda: NOW).publish(site)
+
+    assert real_git(worktree, "show", ":index.html").stdout == staged_before
+    assert real_git(worktree, "status", "--porcelain=v1").stdout.startswith(
+        "AM index.html"
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows argv regression")
+def test_native_windows_many_long_paths_use_stdin_pathspecs(tmp_path: Path) -> None:
+    import xrag.dashboard_publish as module
+
+    root = tmp_path / "project"
+    initialize_project_repository(root)
+    site = prepare_site(root)
+    for index in range(600):
+        path = site / "assets" / f"chunk-{index:04d}-{'x' * 50}.js"
+        path.write_text(f"window.chunk{index} = true;\n", encoding="utf-8")
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    real_git(remote, "init", "--bare")
+    real_git(root, "remote", "add", "origin", str(remote))
+    worktree = root / ".worktrees" / "x-rag-pages"
+    initialize_linked_pages_worktree(root, worktree)
+    calls: list[tuple[list[str], str | bytes | None]] = []
+
+    def recording_runner(
+        command: list[str], cwd: Path, input_text: str | bytes | None
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((list(command), input_text))
+        return module._default_runner(command, cwd, input_text)
+
+    result = PagesPublisher(
+        root, worktree, runner=recording_runner, clock=lambda: NOW
+    ).publish(site)
+
+    assert result == {"changed": True, "branch": "gh-pages"}
+    add_calls = [
+        (command, stdin)
+        for command, stdin in calls
+        if has_git_subcommand(command, "add")
+    ]
+    assert len(add_calls) == 1
+    command, stdin = add_calls[0]
+    assert "--pathspec-from-file=-" in command
+    assert "--pathspec-file-nul" in command
+    assert isinstance(stdin, (str, bytes)) and len(stdin) > 32_767
+    assert len(subprocess.list2cmdline(command)) < 32_767
 
 
 def test_real_independent_gh_pages_repository_is_rejected_before_copy(
@@ -1220,12 +1421,14 @@ def test_real_partial_copy_failure_can_resume_safely(
     original_replace = module.os.replace
     failed = False
 
-    def fail_one_copy(source: object, destination: object) -> None:
+    def fail_one_copy(
+        source: object, destination: object, *args: object, **kwargs: object
+    ) -> None:
         nonlocal failed
-        if not failed and Path(destination) == worktree / "assets" / "app.js":
+        if not failed and Path(destination).name == "app.js":
             failed = True
             raise OSError("injected copy failure")
-        original_replace(source, destination)  # type: ignore[arg-type]
+        original_replace(source, destination, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(module.os, "replace", fail_one_copy)
     with pytest.raises(OSError, match="injected copy failure"):

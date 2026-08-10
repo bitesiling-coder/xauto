@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -18,7 +19,6 @@ from .dashboard_export import assert_public_content
 
 _TEXT_SUFFIXES = {".html", ".css", ".js", ".json"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-_TEMP_NAME = re.compile(r"\.xrag-publish-[0-9a-f]{32}\.tmp\Z")
 
 
 @dataclass(frozen=True)
@@ -26,17 +26,27 @@ class _PreparedFile:
     relative: Path
     content: bytes
     digest: str
+    source_identity: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class _StatusRecord:
+    index: str
+    worktree: str
+    relative: Path
 
 
 class Runner(Protocol):
     def __call__(
-        self, command: list[str], cwd: Path, input_text: str | None
+        self, command: list[str], cwd: Path, input_text: str | bytes | None
     ) -> subprocess.CompletedProcess[str]: ...
 
 
 def _default_runner(
-    command: list[str], cwd: Path, input_text: str | None
+    command: list[str], cwd: Path, input_text: str | bytes | None
 ) -> subprocess.CompletedProcess[str]:
+    if isinstance(input_text, bytes):
+        input_text = input_text.decode("utf-8")
     return subprocess.run(
         command,
         cwd=cwd,
@@ -73,12 +83,15 @@ class PagesPublisher:
             self._validate_existing_worktree(common_git_dir)
 
         guard = _DestinationGuard(self.root, self.worktree)
-        _clean_publisher_temps(self.worktree, guard)
+        self._preflight_identity(self.worktree)
         self._validate_recoverable_state(prepared)
         for item in prepared:
             _write_atomic(self.worktree / item.relative, item.content, guard)
 
         prepared_paths = [item.relative.as_posix() for item in prepared]
+        pathspec_input = "".join(
+            f"{_literal_pathspec(path)}\0" for path in prepared_paths
+        )
         self._git_checked(
             [
                 "git",
@@ -87,10 +100,11 @@ class PagesPublisher:
                 "-c",
                 "core.safecrlf=false",
                 "add",
-                "--",
-                *map(_literal_pathspec, prepared_paths),
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
             ],
             cwd=self.worktree,
+            input_text=pathspec_input,
         )
         self._validate_staged_content(prepared)
         changed = self._git(
@@ -103,7 +117,6 @@ class PagesPublisher:
         if changed.returncode != 1:
             raise _git_error(["git", "diff"], changed)
 
-        self._preflight_identity(self.worktree)
         timestamp = self._clock().isoformat(timespec="seconds")
         self._git_checked(
             ["git", "commit", "-m", f"data: publish dashboard {timestamp}"],
@@ -126,16 +139,16 @@ class PagesPublisher:
 
         discovered = _walk_real_tree(expected, "dashboard source")
         required = (Path("index.html"), Path(".nojekyll"), Path("data/latest.json"))
-        discovered_paths = {relative for relative, _ in discovered}
+        discovered_paths = {relative for relative, _, _ in discovered}
         if any(relative not in discovered_paths for relative in required):
             raise ValueError("dashboard source is incomplete")
 
         prepared: list[_PreparedFile] = []
-        for relative, source in discovered:
+        for relative, source, source_identity in discovered:
             if not _is_allowed(relative):
                 continue
             try:
-                content = _read_source_bytes(source)
+                content = _read_source_bytes(source, source_identity)
             except OSError as error:
                 raise ValueError("dashboard source is unreadable") from error
             suffix = relative.suffix.lower()
@@ -156,10 +169,17 @@ class PagesPublisher:
                         raise ValueError(
                             "dashboard source contains malformed JSON"
                         ) from error
-            elif suffix in _IMAGE_SUFFIXES and not _valid_image(content, suffix):
+            elif suffix in _IMAGE_SUFFIXES and not _valid_image_signature(
+                content, suffix
+            ):
                 raise ValueError("dashboard source contains an invalid image")
             prepared.append(
-                _PreparedFile(relative, content, hashlib.sha256(content).hexdigest())
+                _PreparedFile(
+                    relative,
+                    content,
+                    hashlib.sha256(content).hexdigest(),
+                    source_identity,
+                )
             )
         return sorted(prepared, key=lambda item: item.relative.as_posix())
 
@@ -322,11 +342,42 @@ class PagesPublisher:
         prepared_by_path = {
             item.relative.as_posix(): item for item in prepared
         }
-        for relative in _status_paths(status.stdout):
-            item = prepared_by_path.get(relative.as_posix())
+        object_format_result = self._git_checked(
+            ["git", "rev-parse", "--show-object-format"], cwd=self.worktree
+        )
+        object_format = _first_line(object_format_result.stdout).strip()
+        if object_format not in {"sha1", "sha256"}:
+            raise RuntimeError("Git command rev-parse returned invalid output")
+        index_oids = _index_oids(
+            self._git_checked(
+                ["git", "ls-files", "--stage", "-z"], cwd=self.worktree
+            ).stdout
+        )
+        head_oids = _tree_oids(
+            self._git_checked(
+                ["git", "ls-tree", "-r", "-z", "HEAD"], cwd=self.worktree
+            ).stdout
+        )
+        expected_oids = {
+            path: _git_blob_oid(item.content, object_format)
+            for path, item in prepared_by_path.items()
+        }
+        for record in _status_records(status.stdout):
+            path = record.relative.as_posix()
+            item = prepared_by_path.get(path)
             if item is None or not _destination_has_bytes(
-                self.worktree, relative, item.content
+                self.worktree, record.relative, item
             ):
+                raise RuntimeError(
+                    "Git worktree must be clean or safely resumable"
+                )
+            if record.index == "?":
+                index_is_owned = index_oids.get(path) == head_oids.get(path)
+            elif record.index != " ":
+                index_is_owned = index_oids.get(path) == expected_oids[path]
+            else:
+                index_is_owned = index_oids.get(path) == head_oids.get(path)
+            if not index_is_owned:
                 raise RuntimeError(
                     "Git worktree must be clean or safely resumable"
                 )
@@ -360,32 +411,27 @@ class PagesPublisher:
             for path, item in prepared_by_path.items()
         }
         index_result = self._git_checked(
-            [
-                "git",
-                "ls-files",
-                "--stage",
-                "-z",
-                "--",
-                *map(_literal_pathspec, arguments),
-            ],
+            ["git", "ls-files", "--stage", "-z"],
             cwd=self.worktree,
         )
-        index_oids = _index_oids(index_result.stdout)
+        all_index_oids = _index_oids(index_result.stdout)
+        index_oids = {
+            path: all_index_oids[path]
+            for path in arguments
+            if path in all_index_oids
+        }
         if index_oids != expected_oids:
             raise RuntimeError("staged content does not match prepared dashboard")
         head_result = self._git_checked(
-            [
-                "git",
-                "ls-tree",
-                "-r",
-                "-z",
-                "HEAD",
-                "--",
-                *map(_literal_pathspec, arguments),
-            ],
+            ["git", "ls-tree", "-r", "-z", "HEAD"],
             cwd=self.worktree,
         )
-        head_oids = _tree_oids(head_result.stdout)
+        all_head_oids = _tree_oids(head_result.stdout)
+        head_oids = {
+            path: all_head_oids[path]
+            for path in arguments
+            if path in all_head_oids
+        }
         expected_changed = {
             path
             for path, expected_oid in expected_oids.items()
@@ -427,7 +473,7 @@ class PagesPublisher:
         command: list[str],
         *,
         cwd: Path,
-        input_text: str | None = None,
+        input_text: str | bytes | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return self._runner(command, cwd, input_text)
 
@@ -436,7 +482,7 @@ class PagesPublisher:
         command: list[str],
         *,
         cwd: Path,
-        input_text: str | None = None,
+        input_text: str | bytes | None = None,
     ) -> subprocess.CompletedProcess[str]:
         result = self._git(command, cwd=cwd, input_text=input_text)
         if result.returncode != 0:
@@ -501,8 +547,10 @@ def _validate_chain(
             raise ValueError(f"unsafe {label}")
 
 
-def _walk_real_tree(root: Path, label: str) -> list[tuple[Path, Path]]:
-    files: list[tuple[Path, Path]] = []
+def _walk_real_tree(
+    root: Path, label: str
+) -> list[tuple[Path, Path, tuple[int, int, int, int]]]:
+    files: list[tuple[Path, Path, tuple[int, int, int, int]]] = []
     pending = [root]
     while pending:
         directory = pending.pop()
@@ -524,13 +572,17 @@ def _walk_real_tree(root: Path, label: str) -> list[tuple[Path, Path]]:
             elif stat.S_ISREG(mode):
                 if source_stat.st_nlink != 1:
                     raise ValueError(f"unsafe {label}")
-                files.append((path.relative_to(root), path))
+                files.append(
+                    (path.relative_to(root), path, _file_identity(source_stat))
+                )
             else:
                 raise ValueError(f"unsafe {label}")
     return files
 
 
-def _read_source_bytes(path: Path) -> bytes:
+def _read_source_bytes(
+    path: Path, expected_identity: tuple[int, int, int, int]
+) -> bytes:
     if _is_link_or_reparse(path):
         raise OSError("unsafe source file")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
@@ -538,14 +590,31 @@ def _read_source_bytes(path: Path) -> bytes:
     descriptor = os.open(path, flags)
     try:
         source_stat = os.fstat(descriptor)
-        if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1:
+        if (
+            not stat.S_ISREG(source_stat.st_mode)
+            or source_stat.st_nlink != 1
+            or _file_identity(source_stat) != expected_identity
+        ):
             raise OSError("unsafe source file")
         with os.fdopen(descriptor, "rb") as source_file:
             descriptor = -1
-            return source_file.read()
+            content = source_file.read()
+            final_stat = os.fstat(source_file.fileno())
+            if _file_identity(final_stat) != expected_identity:
+                raise OSError("unsafe source file")
+            return content
     finally:
         if descriptor >= 0:
             os.close(descriptor)
+
+
+def _file_identity(source_stat: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        source_stat.st_dev,
+        source_stat.st_ino,
+        source_stat.st_size,
+        source_stat.st_mtime_ns,
+    )
 
 
 def _is_allowed(relative: Path) -> bool:
@@ -561,7 +630,7 @@ def _is_allowed(relative: Path) -> bool:
     return False
 
 
-def _valid_image(content: bytes, suffix: str) -> bool:
+def _valid_image_signature(content: bytes, suffix: str) -> bool:
     if suffix in {".jpg", ".jpeg"}:
         return content.startswith(b"\xff\xd8\xff")
     if suffix == ".png":
@@ -605,97 +674,203 @@ class _DestinationGuard:
         self.worktree = worktree
         _validate_real_root(root, "dashboard target")
         _validate_chain(root, worktree, "dashboard target", require_final=True)
+        self._worktree_identity = _directory_identity(worktree)
 
-    def validate_target(self, target: Path) -> None:
+    def _relative_target(self, target: Path) -> Path:
         target = target.absolute()
         _validate_real_root(self.root, "dashboard target")
-        _validate_chain(
-            self.root, self.worktree, "dashboard target", require_final=True
-        )
         try:
             relative = target.relative_to(self.worktree)
         except ValueError as error:
             raise ValueError("unsafe dashboard target") from error
         if not relative.parts:
             raise ValueError("unsafe dashboard target")
-        _ensure_real_directories(
-            self.worktree, target.parent, "dashboard target"
-        )
-        if _is_link_or_reparse(target) or (target.exists() and not target.is_file()):
-            raise ValueError("unsafe dashboard target")
-        expected_parent = self.worktree / relative.parent
-        if target.parent.resolve(strict=True) != expected_parent:
-            raise ValueError("unsafe dashboard target")
+        return relative
 
+    @contextmanager
+    def bound_parent(self, target: Path):
+        relative = self._relative_target(target)
+        if os.name == "nt":
+            with self._bound_windows_parent(relative) as parent:
+                yield parent, None
+        else:
+            with self._bound_posix_parent(relative) as descriptor:
+                yield self.worktree / relative.parent, descriptor
 
-def _clean_publisher_temps(
-    worktree: Path, guard: _DestinationGuard
-) -> None:
-    pending = [worktree]
-    while pending:
-        directory = pending.pop()
+    @contextmanager
+    def _bound_posix_parent(self, relative: Path):
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(self.worktree, flags)
         try:
-            entries = list(os.scandir(directory))
-        except OSError as error:
-            raise ValueError("unsafe dashboard target") from error
-        for entry in entries:
-            if directory == worktree and entry.name == ".git":
-                continue
-            path = Path(entry.path)
-            matches_temp = bool(_TEMP_NAME.fullmatch(entry.name))
-            if matches_temp:
-                _validate_chain(
-                    worktree,
-                    path.parent,
-                    "dashboard target",
-                    require_final=True,
-                )
-                if _is_link_or_reparse(path):
-                    raise ValueError("unsafe publisher temporary file")
+            source_stat = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(source_stat.st_mode)
+                or _directory_identity_from_stat(source_stat)
+                != self._worktree_identity
+            ):
+                raise ValueError("unsafe dashboard target")
+            for part in relative.parent.parts:
                 try:
-                    mode = entry.stat(follow_symlinks=False).st_mode
-                except OSError as error:
-                    raise ValueError("unsafe publisher temporary file") from error
-                if not stat.S_ISREG(mode):
-                    raise ValueError("unsafe publisher temporary file")
-                guard.validate_target(path)
-                try:
-                    path.unlink()
-                except OSError as error:
-                    raise ValueError("unsafe publisher temporary file") from error
-                continue
-            if entry.is_symlink() or _is_link_or_reparse(path):
-                continue
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    pending.append(path)
-            except OSError as error:
-                raise ValueError("unsafe dashboard target") from error
+                    child = os.open(part, flags, dir_fd=descriptor)
+                except FileNotFoundError:
+                    os.mkdir(part, dir_fd=descriptor)
+                    child = os.open(part, flags, dir_fd=descriptor)
+                child_stat = os.fstat(child)
+                if not stat.S_ISDIR(child_stat.st_mode):
+                    os.close(child)
+                    raise ValueError("unsafe dashboard target")
+                os.close(descriptor)
+                descriptor = child
+            _validate_bound_leaf(relative.name, descriptor)
+            yield descriptor
+        finally:
+            os.close(descriptor)
+
+    @contextmanager
+    def _bound_windows_parent(self, relative: Path):
+        handles: list[int] = []
+        current = self.worktree
+        try:
+            for index, part in enumerate((None, *relative.parent.parts)):
+                if index:
+                    current = current / str(part)
+                    if not _path_exists(current):
+                        try:
+                            current.mkdir()
+                        except OSError as error:
+                            raise ValueError("unsafe dashboard target") from error
+                handle = _open_windows_directory_handle(current)
+                handles.append(handle)
+                if (
+                    _is_link_or_reparse(current)
+                    or not current.is_dir()
+                    or (
+                        index == 0
+                        and _directory_identity(current)
+                        != self._worktree_identity
+                    )
+                ):
+                    raise ValueError("unsafe dashboard target")
+            _validate_path_leaf(current / relative.name)
+            yield current
+        finally:
+            for handle in reversed(handles):
+                _close_windows_handle(handle)
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    try:
+        source_stat = path.lstat()
+    except OSError as error:
+        raise ValueError("unsafe dashboard target") from error
+    if not stat.S_ISDIR(source_stat.st_mode):
+        raise ValueError("unsafe dashboard target")
+    return _directory_identity_from_stat(source_stat)
+
+
+def _directory_identity_from_stat(source_stat: os.stat_result) -> tuple[int, int]:
+    return source_stat.st_dev, source_stat.st_ino
+
+
+def _validate_bound_leaf(name: str, parent_descriptor: int) -> None:
+    try:
+        target_stat = os.stat(
+            name, dir_fd=parent_descriptor, follow_symlinks=False
+        )
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise ValueError("unsafe dashboard target") from error
+    if not stat.S_ISREG(target_stat.st_mode):
+        raise ValueError("unsafe dashboard target")
+
+
+def _validate_path_leaf(path: Path) -> None:
+    if _is_link_or_reparse(path):
+        raise ValueError("unsafe dashboard target")
+    if _path_exists(path) and not path.is_file():
+        raise ValueError("unsafe dashboard target")
+
+
+def _open_windows_directory_handle(path: Path) -> int:
+    import ctypes
+    from ctypes import wintypes
+
+    create_file = ctypes.WinDLL("kernel32", use_last_error=True).CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(
+        str(path),
+        0x80000000,
+        0x00000001 | 0x00000002,
+        None,
+        3,
+        0x02000000 | 0x00200000,
+        None,
+    )
+    if handle == wintypes.HANDLE(-1).value:
+        raise ValueError("unsafe dashboard target")
+    return int(handle)
+
+
+def _close_windows_handle(handle: int) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    close_handle = ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+    close_handle(handle)
 
 
 def _write_atomic(path: Path, content: bytes, guard: _DestinationGuard) -> None:
-    guard.validate_target(path)
-    temporary_path: Path | None = (
-        path.parent / f".xrag-publish-{uuid.uuid4().hex}.tmp"
-    )
-    try:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        binary_flag = getattr(os, "O_BINARY", 0)
-        descriptor = os.open(temporary_path, flags | binary_flag, 0o600)
-        with os.fdopen(descriptor, "wb") as temporary:
-            temporary.write(content)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        guard.validate_target(path)
-        os.replace(temporary_path, path)
-        temporary_path = None
-    except BaseException:
-        if temporary_path is not None:
-            try:
-                temporary_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        raise
+    with guard.bound_parent(path) as (parent, parent_descriptor):
+        temporary_name: str | None = f".xrag-publish-{uuid.uuid4().hex}.tmp"
+        try:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            flags |= getattr(os, "O_BINARY", 0)
+            if parent_descriptor is None:
+                temporary_path = parent / temporary_name
+                descriptor = os.open(temporary_path, flags, 0o600)
+            else:
+                descriptor = os.open(
+                    temporary_name, flags, 0o600, dir_fd=parent_descriptor
+                )
+            with os.fdopen(descriptor, "wb") as temporary:
+                temporary.write(content)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            if parent_descriptor is None:
+                _validate_path_leaf(path)
+                os.replace(parent / temporary_name, path)
+            else:
+                _validate_bound_leaf(path.name, parent_descriptor)
+                os.replace(
+                    temporary_name,
+                    path.name,
+                    src_dir_fd=parent_descriptor,
+                    dst_dir_fd=parent_descriptor,
+                )
+            temporary_name = None
+        except BaseException:
+            if temporary_name is not None:
+                try:
+                    if parent_descriptor is None:
+                        (parent / temporary_name).unlink(missing_ok=True)
+                    else:
+                        os.unlink(temporary_name, dir_fd=parent_descriptor)
+                except OSError:
+                    pass
+            raise
 
 
 def _git_error(
@@ -732,15 +907,23 @@ def _single_output_token(
     return token
 
 
-def _status_paths(output: str) -> list[Path]:
-    paths: list[Path] = []
+def _status_records(output: str) -> list[_StatusRecord]:
+    records: list[_StatusRecord] = []
     for record in _nul_records(output):
         if len(record) < 4 or record[2] != " ":
             raise RuntimeError("Git worktree status returned invalid output")
         if record[0] in {"R", "C"} or record[1] in {"R", "C"}:
             raise RuntimeError("Git worktree has changes that cannot be safely resumed")
-        paths.append(_safe_git_relative_path(record[3:]))
-    return paths
+        if record[:2] == "??":
+            index, worktree = "?", "?"
+        elif "?" in record[:2] or "!" in record[:2]:
+            raise RuntimeError("Git worktree status returned invalid output")
+        else:
+            index, worktree = record[0], record[1]
+        records.append(
+            _StatusRecord(index, worktree, _safe_git_relative_path(record[3:]))
+        )
+    return records
 
 
 def _nul_paths(output: str) -> list[Path]:
@@ -767,7 +950,9 @@ def _safe_git_relative_path(value: str) -> Path:
     return path
 
 
-def _destination_has_bytes(root: Path, relative: Path, expected: bytes) -> bool:
+def _destination_has_bytes(
+    root: Path, relative: Path, expected: _PreparedFile
+) -> bool:
     path = root / relative
     try:
         _validate_chain(root, path.parent, "dashboard target", require_final=True)
@@ -776,9 +961,14 @@ def _destination_has_bytes(root: Path, relative: Path, expected: bytes) -> bool:
     if _is_link_or_reparse(path) or not path.is_file():
         return False
     try:
-        return path.read_bytes() == expected
+        content = path.read_bytes()
     except OSError:
         return False
+    return (
+        len(content) == len(expected.content)
+        and hashlib.sha256(content).hexdigest() == expected.digest
+        and content == expected.content
+    )
 
 
 def _git_blob_oid(content: bytes, object_format: str) -> str:
