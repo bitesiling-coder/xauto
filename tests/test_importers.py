@@ -11,6 +11,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.importers import load_posts
+from xrag.markdown_store import MarkdownStore
+from xrag.models import LocalMedia, Post, QuotedPost
 
 
 def test_load_posts_imports_yaml_and_json_lists(tmp_path: Path) -> None:
@@ -47,6 +49,42 @@ def test_load_posts_imports_markdown_front_matter_and_body(tmp_path: Path) -> No
     assert post.text == "Markdown body"
     assert post.created_at == "2026-08-08"
     assert post.source_type == "import"
+
+
+def test_load_posts_extracts_only_canonical_marked_text(tmp_path: Path) -> None:
+    source = tmp_path / "canonical"
+    path = MarkdownStore(source, clock=lambda: "2026-08-09T00:00:00Z").upsert(
+        Post(
+            "123",
+            "Ada",
+            "正文内容",
+            "",
+            "https://x.com/i/status/123",
+            media_posters=("https://pbs.twimg.com/media/poster",),
+            quoted_post=QuotedPost(
+                "456", "Bob", "引用内容", "", "https://x.com/i/status/456"
+            ),
+            local_media=(
+                LocalMedia(
+                    "post",
+                    "video_poster",
+                    "https://pbs.twimg.com/media/poster",
+                    "../media/123/video-poster-01.jpg",
+                    "image/jpeg",
+                ),
+            ),
+        )
+    )
+
+    [post] = load_posts(path)
+
+    assert post.text == "正文内容"
+    assert "## 正文" not in post.text
+    assert "![视频封面" not in post.text
+    assert post.media_posters == ("https://pbs.twimg.com/media/poster",)
+    assert post.quoted_post is not None
+    assert post.quoted_post.text == "引用内容"
+    assert post.local_media[0].relative_path == "../media/123/video-poster-01.jpg"
 
 
 def test_load_posts_rejects_unsupported_invalid_roots_and_rows(tmp_path: Path) -> None:
