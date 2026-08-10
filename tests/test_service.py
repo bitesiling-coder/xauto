@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 import json
 import subprocess
 import sys
@@ -12,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.config import AppConfig
 from xrag.markdown_store import MarkdownStore
-from xrag.models import Post
+from xrag.media_store import MediaArchiveResult, MediaFailure, MediaStore
+from xrag.models import LocalMedia, Post
 from xrag.opencli import OpenCLIClient, OpenCLIError, SearchBatch, SearchRejection
 import xrag.service as service_module
 from xrag.service import XragService
@@ -66,6 +68,23 @@ class Vectors:
         return [query]
 
 
+class Media:
+    def __init__(
+        self,
+        result: MediaArchiveResult | None = None,
+        failure: Exception | None = None,
+    ) -> None:
+        self.result = result
+        self.failure = failure
+        self.archived: list[Post] = []
+
+    def archive(self, item: Post) -> MediaArchiveResult:
+        self.archived.append(item)
+        if self.failure is not None:
+            raise self.failure
+        return self.result or MediaArchiveResult(item, ())
+
+
 def config(root: Path, keywords: tuple[str, ...] = ("AI", "GPU")) -> AppConfig:
     return AppConfig(root, False, "03:00", "UTC", 7, 3, keywords, "model")
 
@@ -80,11 +99,128 @@ def no_real_lock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(service_module, "writer_lock", unlocked)
 
 
-def make_service(tmp_path: Path, client: OpenCLI, vectors: Vectors) -> XragService:
+def make_service(
+    tmp_path: Path,
+    client: OpenCLI,
+    vectors: Vectors,
+    media: object | None = None,
+) -> XragService:
     return XragService(
         config(tmp_path), client, MarkdownStore(tmp_path / "data" / "markdown"), vectors,
+        media=media,
         clock=lambda: "2026-08-09T12:00:00Z",
     )
+
+
+def test_collect_archives_before_markdown_and_vectors(tmp_path: Path) -> None:
+    original = post("123")
+    archived = replace(
+        original,
+        local_media=(
+            LocalMedia(
+                "post",
+                "image",
+                "https://pbs.twimg.com/media/image",
+                "../media/123/image-01.jpg",
+                "image/jpeg",
+            ),
+        ),
+    )
+    media = Media(MediaArchiveResult(archived, ()))
+    vectors = Vectors()
+    service = make_service(tmp_path, OpenCLI([original]), vectors, media)
+
+    result = service.collect("AI")
+
+    assert result == {"found": 1, "stored": 1, "chunks": 2, "errors": 0}
+    assert media.archived == [original]
+    assert service.markdown.get("123") == archived
+
+
+def test_media_failure_is_logged_but_text_is_stored(tmp_path: Path) -> None:
+    item = post("123", "safe body")
+    media = Media(
+        MediaArchiveResult(
+            item,
+            (
+                MediaFailure(
+                    "post",
+                    "image",
+                    "https://pbs.twimg.com/media/image",
+                    "TimeoutError",
+                    "media download failed",
+                ),
+            ),
+        )
+    )
+    service = make_service(tmp_path, OpenCLI([item]), Vectors(), media)
+
+    result = service.collect("AI")
+
+    assert result == {"found": 1, "stored": 1, "chunks": 2, "errors": 1}
+    assert service.markdown.get("123") is not None
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "TimeoutError" in errors
+    assert "media download failed" in errors
+
+
+def test_unexpected_media_exception_does_not_block_text_storage(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        OpenCLI([post("123")]),
+        Vectors(),
+        Media(failure=RuntimeError("RECOGNIZABLE secret media detail")),
+    )
+
+    result = service.collect("AI")
+
+    assert result == {"found": 1, "stored": 1, "chunks": 2, "errors": 1}
+    assert service.markdown.get("123") is not None
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert "media archival failed" in errors
+    assert "RECOGNIZABLE" not in errors
+
+
+def test_recollect_passes_existing_media_mapping_to_archiver(tmp_path: Path) -> None:
+    media = Media()
+    service = make_service(tmp_path, OpenCLI([post("123")]), Vectors(), media)
+    existing = replace(
+        post("123"),
+        local_media=(
+            LocalMedia(
+                "post",
+                "image",
+                "https://pbs.twimg.com/media/image",
+                "../media/123/image-01.jpg",
+                "image/jpeg",
+            ),
+        ),
+    )
+    service.markdown.upsert(existing)
+
+    service.collect("AI")
+
+    assert media.archived[0].local_media == existing.local_media
+
+
+def test_import_non_x_media_counts_failure_but_keeps_text(tmp_path: Path) -> None:
+    source = tmp_path / "import.yaml"
+    source.write_text(
+        "id: imported\ntext: imported body\nmedia_urls:\n  - https://example.com/image.jpg\n",
+        encoding="utf-8",
+    )
+    media = MediaStore(
+        tmp_path / "data/media",
+        open_url=lambda request, timeout: (_ for _ in ()).throw(
+            AssertionError("non-X URL must not be opened")
+        ),
+    )
+    service = make_service(tmp_path, OpenCLI(), Vectors(), media)
+
+    result = service.import_path(source)
+
+    assert result == {"files": 1, "imported": 1, "chunks": 2, "errors": 1}
+    assert service.markdown.get("imported") is not None
 
 
 def test_collect_stores_before_indexing_continues_after_index_error_and_writes_summary(tmp_path: Path) -> None:
