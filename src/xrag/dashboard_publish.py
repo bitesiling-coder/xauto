@@ -118,7 +118,7 @@ class PagesPublisher:
             except OSError as error:
                 raise ValueError("dashboard source is unreadable") from error
             suffix = relative.suffix.lower()
-            if suffix in _TEXT_SUFFIXES:
+            if suffix in _TEXT_SUFFIXES or relative == Path(".nojekyll"):
                 try:
                     decoded = content.decode("utf-8")
                 except UnicodeDecodeError as error:
@@ -126,6 +126,8 @@ class PagesPublisher:
                         "dashboard source contains malformed UTF-8"
                     ) from error
                 assert_public_content(decoded)
+                if relative == Path(".nojekyll") and decoded:
+                    raise ValueError("dashboard .nojekyll marker must be empty")
                 if suffix == ".json":
                     try:
                         json.loads(decoded)
@@ -246,7 +248,13 @@ class PagesPublisher:
             raise RuntimeError("Git worktree top-level does not match destination")
 
         status = self._git_checked(
-            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            [
+                "git",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ],
             cwd=self.worktree,
         )
         if status.stdout:

@@ -310,6 +310,27 @@ def test_existing_worktree_must_be_exact_clean_gh_pages(
     assert not any(command[:2] == ["git", "add"] for command in runner.commands())
 
 
+def test_prestaged_index_change_aborts_before_copy_or_add(tmp_path: Path) -> None:
+    site = prepare_site(tmp_path)
+    worktree = prepare_existing_worktree(tmp_path)
+    sentinel = worktree / "index.html"
+    sentinel.write_text("user index content", encoding="utf-8")
+    runner = FakeRunner(tmp_path, worktree, status="M  index.html\0")
+
+    with pytest.raises(RuntimeError, match="clean"):
+        publisher(tmp_path, worktree, runner).publish(site)
+
+    assert sentinel.read_text(encoding="utf-8") == "user index content"
+    assert [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+    ] in runner.commands()
+    assert not any(command[:2] == ["git", "add"] for command in runner.commands())
+
+
 @pytest.mark.parametrize(
     "site_factory",
     [
@@ -351,6 +372,8 @@ def test_required_source_files_must_exist(tmp_path: Path, missing: str) -> None:
     [
         ("assets/app.js", b"const password = 'secret';\n", "unsafe public output"),
         ("assets/styles.css", b"\xff\xfe", "UTF-8"),
+        (".nojekyll", b"\xff\xfe", "UTF-8"),
+        (".nojekyll", b"API_KEY=secret\n", "unsafe public output"),
         ("data/latest.json", b"{bad json", "JSON"),
         ("data/2026-08-11.json", b"[] trailing", "JSON"),
     ],
@@ -366,6 +389,21 @@ def test_all_text_is_safe_utf8_and_json_is_parseable_before_git_or_writes(
     runner = FakeRunner(tmp_path, worktree)
 
     with pytest.raises(ValueError, match=message):
+        publisher(tmp_path, worktree, runner).publish(site)
+
+    assert runner.calls == []
+    assert sentinel.read_text(encoding="utf-8") == "old"
+
+
+def test_nojekyll_marker_must_be_empty_before_git_or_writes(tmp_path: Path) -> None:
+    site = prepare_site(tmp_path)
+    (site / ".nojekyll").write_text("safe but unexpected\n", encoding="utf-8")
+    worktree = prepare_existing_worktree(tmp_path)
+    sentinel = worktree / "index.html"
+    sentinel.write_text("old", encoding="utf-8")
+    runner = FakeRunner(tmp_path, worktree)
+
+    with pytest.raises(ValueError, match="empty"):
         publisher(tmp_path, worktree, runner).publish(site)
 
     assert runner.calls == []
