@@ -210,6 +210,24 @@ def test_x_native_timestamps_participate_in_today_and_48_hour_fallback() -> None
     }
 
 
+def test_x_native_timestamp_rejects_weekday_that_disagrees_with_date() -> None:
+    valid = post("valid-weekday", created_at="Mon Aug 10 03:00:37 +0000 2026")
+    inconsistent = post(
+        "inconsistent-weekday",
+        created_at="Tue Aug 10 03:00:37 +0000 2026",
+    )
+
+    ranked = rank_posts(
+        [valid, inconsistent],
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+
+    assert [item.post.id for item in ranked] == ["valid-weekday"]
+
+
 def test_passed_timezone_controls_calendar_day_across_utc_boundary() -> None:
     singapore = ZoneInfo("Asia/Singapore")
     local_now = datetime(2026, 8, 10, 10, 0, tzinfo=singapore)
