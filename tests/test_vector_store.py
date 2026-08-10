@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from xrag.models import Post
+from xrag.models import Post, QuotedPost
 from xrag.vector_store import VectorStore
 
 
@@ -79,6 +79,31 @@ def test_index_post_upserts_stable_ids_and_metadata_before_stale_cleanup(tmp_pat
         },
     ]
     assert collection.calls[2] == ("delete", {"ids": ["post-1:2"]})
+
+
+def test_index_post_includes_quoted_text_without_markdown_or_media(tmp_path):
+    collection = FakeCollection()
+    store = VectorStore(collection, max_chars=500, overlap=0)
+    item = Post(
+        "post-1",
+        "author",
+        "main body",
+        "",
+        "https://x.com/i/status/1",
+        media_urls=("https://pbs.twimg.com/media/image",),
+        quoted_post=QuotedPost(
+            "2", "quoted", "quoted searchable body", "", "https://x.com/i/status/2"
+        ),
+    )
+
+    assert store.index_post(item, tmp_path / "post-1.md") == 2
+
+    indexed_text = "\n".join(collection.calls[1][1]["documents"])
+    assert "main body" in indexed_text
+    assert "quoted searchable body" in indexed_text
+    assert "## 正文" not in indexed_text
+    assert "![图片" not in indexed_text
+    assert "pbs.twimg.com" not in indexed_text
 
 
 def test_index_empty_post_only_removes_existing_chunks(tmp_path):

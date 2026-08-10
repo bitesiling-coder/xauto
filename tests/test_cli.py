@@ -245,6 +245,7 @@ def test_normal_builder_defers_stable_chroma_open(
 
     assert calls == []
     assert service.config is configuration
+    assert service.media.directory == configuration.media_dir
 
 
 def test_operational_error_is_redacted_and_has_no_traceback(monkeypatch) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import os
@@ -51,6 +52,7 @@ class XragService:
         markdown: MarkdownStore,
         vectors: Any,
         *,
+        media: Any | None = None,
         vector_factory: Callable[[Path], Any] | None = None,
         rebuild_factory: Callable[[Path], Any] | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -60,6 +62,7 @@ class XragService:
         self.opencli = opencli
         self.markdown = markdown
         self.vectors = vectors
+        self.media = media
         self._vector_factory = vector_factory
         self._rebuild_factory = rebuild_factory
         self._sleep = sleep
@@ -98,6 +101,8 @@ class XragService:
             with self._vector_session() as vectors:
                 for item in posts:
                     try:
+                        self.markdown.validate_target(self._post_id(item))
+                        item = self._archive_media(item, counts)
                         path = self.markdown.upsert(item)
                         counts["stored"] += 1
                         counts["chunks"] += vectors.index_post(item, path)
@@ -158,6 +163,8 @@ class XragService:
                         continue
                     for item in posts:
                         try:
+                            self.markdown.validate_target(self._post_id(item))
+                            item = self._archive_media(item, counts)
                             markdown_path = self.markdown.upsert(item)
                             counts["imported"] += 1
                             counts["chunks"] += vectors.index_post(item, markdown_path)
@@ -171,6 +178,35 @@ class XragService:
                             )
                 self._write_last_run("import", counts)
         return counts
+
+    def _archive_media(self, item: Any, counts: dict[str, int]) -> Any:
+        if self.media is None:
+            return item
+        try:
+            existing = self.markdown.get(self._post_id(item))
+            if existing is not None:
+                merged = tuple(dict.fromkeys((*item.local_media, *existing.local_media)))
+                item = replace(item, local_media=merged)
+            result = self.media.archive(item)
+        except Exception as error:
+            counts["errors"] += 1
+            self._log_error(
+                "media",
+                self._post_id(item),
+                error,
+                fixed_message="media archival failed",
+            )
+            return item
+        for failure in result.failures:
+            counts["errors"] += 1
+            self._log_error(
+                "media",
+                f"{self._post_id(item)}:{failure.owner}:{failure.kind}:{failure.safe_source}",
+                RuntimeError(failure.reason),
+                fixed_message=failure.reason,
+                error_name=failure.error_name,
+            )
+        return result.post
 
     def search(self, query: str, top: int) -> Any:
         with writer_lock(self.config.root):

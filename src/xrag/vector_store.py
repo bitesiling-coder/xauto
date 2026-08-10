@@ -80,7 +80,7 @@ class VectorStore:
         self._closed = True
 
     def index_post(self, post: Post, markdown_path: Path) -> int:
-        chunks = chunk_text(post.text, self.max_chars, self.overlap)
+        chunks = chunk_text(post.searchable_text, self.max_chars, self.overlap)
         existing = self.collection.get(
             where={"post_id": post.id},
             include=[],

@@ -8,6 +8,12 @@ import re
 
 import yaml
 
+from .markdown_store import (
+    _is_canonical_metadata,
+    _local_media_from_value,
+    _quoted_from_value,
+    extract_body_text,
+)
 from .models import Post
 
 
@@ -66,7 +72,10 @@ def _load_markdown(path: Path) -> dict[str, object]:
     row = dict(metadata)
     if "id" not in row and _SAFE_ID.fullmatch(path.stem):
         row["id"] = path.stem
-    row["text"] = content[end + len("\n---\n") :].strip()
+    row["text"] = extract_body_text(
+        content[end + len("\n---\n") :],
+        canonical=_is_canonical_metadata(row),
+    )
     return row
 
 
@@ -98,6 +107,9 @@ def _normalize_row(row: Mapping[object, object]) -> Post:
         likes=_nonnegative_integer(row.get("likes")),
         views=_nonnegative_integer(row.get("views")),
         media_urls=_strings(row.get("media_urls")),
+        media_posters=_strings(row.get("media_posters")),
+        quoted_post=_quoted_from_value(row.get("quoted_tweet")),
+        local_media=_local_media_from_value(row.get("local_media", [])),
         source_keywords=_strings(row.get("source_keywords")),
         source_type="import",
     )

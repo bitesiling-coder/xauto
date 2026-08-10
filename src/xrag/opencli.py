@@ -7,7 +7,7 @@ import subprocess
 
 import yaml
 
-from xrag.models import Post
+from xrag.models import Post, QuotedPost
 
 
 class OpenCLIError(RuntimeError):
@@ -124,7 +124,27 @@ def _normalize_post(row: Mapping[object, object], keyword: str) -> Post | None:
         likes=_integer(row.get("likes")),
         views=_integer(row.get("views")),
         media_urls=_media_urls(row.get("media_urls")),
+        media_posters=_media_urls(row.get("media_posters")),
+        quoted_post=_quoted_post(row.get("quoted_tweet")),
         source_keywords=(keyword,),
+    )
+
+
+def _quoted_post(value: object) -> QuotedPost | None:
+    if not isinstance(value, Mapping):
+        return None
+    post_id = _identifier(value.get("id"))
+    text = _string(value.get("text"))
+    if not post_id or not text:
+        return None
+    return QuotedPost(
+        id=post_id,
+        author=_string(value.get("author")) or "unknown",
+        text=text,
+        created_at=_timestamp(value.get("created_at")),
+        url=_string(value.get("url")) or f"https://x.com/i/status/{post_id}",
+        media_urls=_media_urls(value.get("media_urls")),
+        media_posters=_media_urls(value.get("media_posters")),
     )
 
 

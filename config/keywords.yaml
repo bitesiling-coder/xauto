@@ -3,9 +3,12 @@ schedule:
   time: "10:00"
   timezone: Asia/Singapore
 collection:
-  limit_per_keyword: 50
+  limit_per_keyword: 10
   delay_seconds: 10
 keywords:
-  - 人工智能
+  - '"Autonomous AI Agents" OR 自主智能体 OR "Rogue AI Agents" OR "Agent Security" OR "AI Safety Evaluation" OR "AI Cybersecurity"'
+  - '"World Models" OR 世界模型 OR "Open-weight Models" OR AGI OR "Intelligence Explosion" OR "Embodied AI" OR 具身智能 OR "Humanoid Robots"'
+  - 'RWA OR 现实资产代币化 OR "Tokenized Stocks" OR "Stablecoin Payments" OR "Solana RWA"'
+  - '"Prediction Markets" OR "AI Agents Crypto" OR x402 OR "On-chain Perps" OR "Crypto ETF" OR MiCA OR "CLARITY Act" OR 加密监管'
 embedding:
   model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2

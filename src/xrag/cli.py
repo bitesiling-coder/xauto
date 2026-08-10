@@ -11,6 +11,7 @@ import yaml
 
 from .config import load_config
 from .markdown_store import MarkdownStore
+from .media_store import MediaStore
 from .opencli import OpenCLIClient, OpenCLIError
 from .service import XragService
 from .vector_store import VectorStore
@@ -49,6 +50,7 @@ def main(
 def build_service(root: Path) -> XragService:
     config = load_config(root.resolve())
     markdown = MarkdownStore(config.markdown_dir)
+    media = MediaStore(config.media_dir)
 
     def vector_factory(path: Path) -> VectorStore:
         return VectorStore.persistent(path, config.embedding_model)
@@ -58,6 +60,7 @@ def build_service(root: Path) -> XragService:
         OpenCLIClient(),
         markdown,
         None,
+        media=media,
         vector_factory=vector_factory,
         rebuild_factory=vector_factory,
     )
