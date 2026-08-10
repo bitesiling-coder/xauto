@@ -28,6 +28,18 @@ class AppConfig:
         return self.root / "data" / "media"
 
     @property
+    def dashboard_dir(self) -> Path:
+        return self.root / "data" / "dashboard-site"
+
+    @property
+    def dashboard_source_dir(self) -> Path:
+        return self.root / "dashboard"
+
+    @property
+    def pages_worktree(self) -> Path:
+        return self.root / ".worktrees" / "x-rag-pages"
+
+    @property
     def import_dir(self) -> Path:
         return self.root / "data" / "imports"
 

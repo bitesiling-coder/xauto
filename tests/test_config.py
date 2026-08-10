@@ -53,6 +53,9 @@ def test_load_config_reads_valid_configuration(tmp_path: Path) -> None:
     assert config.keywords == ("人工智能", "AI 视频")
     assert config.markdown_dir == tmp_path / "data" / "markdown"
     assert config.media_dir == tmp_path / "data" / "media"
+    assert config.dashboard_dir == tmp_path / "data" / "dashboard-site"
+    assert config.dashboard_source_dir == tmp_path / "dashboard"
+    assert config.pages_worktree == tmp_path / ".worktrees" / "x-rag-pages"
 
 
 def test_repository_config_uses_four_approved_daily_topic_groups() -> None:
