@@ -17,4 +17,4 @@ if ! command -v opencli >/dev/null 2>&1; then
     exit 127
 fi
 
-exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" collect --all
+exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update

@@ -44,7 +44,7 @@ def ps_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def test_daily_runner_derives_root_and_appends_exact_collect_command() -> None:
+def test_daily_runner_uses_fail_fast_dashboard_update_pipeline() -> None:
     script = RUNNER.read_text(encoding="utf-8")
 
     assert "set -euo pipefail" in script
@@ -57,7 +57,9 @@ def test_daily_runner_derives_root_and_appends_exact_collect_command() -> None:
     assert "export TRANSFORMERS_OFFLINE=1" in script
     assert "command -v opencli" in script
     assert "scheduled collection start" in script
-    assert 'exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" collect --all' in script
+    assert script.count('dashboard update') == 1
+    assert 'exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update' in script
+    assert 'collect --all' not in script
 
 
 def test_readme_documents_local_media_and_resilient_collection() -> None:
@@ -366,8 +368,8 @@ def test_daily_runner_finds_opencli_and_sets_offline_environment(tmp_path: Path)
     assert [line for line in log.splitlines() if line.startswith("ARG=")] == [
         "ARG=<--root>",
         f"ARG=<{wsl_project}>",
-        "ARG=<collect>",
-        "ARG=<--all>",
+        "ARG=<dashboard>",
+        "ARG=<update>",
     ]
     assert f"OPENCLI=<{wsl_home}/.local/bin/opencli>" in log
     assert "HF_HUB_OFFLINE=<1>" in log
