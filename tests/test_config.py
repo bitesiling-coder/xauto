@@ -10,6 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from xrag.config import load_config
 
 
+APPROVED_KEYWORDS = (
+    '"Autonomous AI Agents" OR 自主智能体 OR "Rogue AI Agents" OR "Agent Security" OR "AI Safety Evaluation" OR "AI Cybersecurity"',
+    '"World Models" OR 世界模型 OR "Open-weight Models" OR AGI OR "Intelligence Explosion" OR "Embodied AI" OR 具身智能 OR "Humanoid Robots"',
+    'RWA OR 现实资产代币化 OR "Tokenized Stocks" OR "Stablecoin Payments" OR "Solana RWA"',
+    '"Prediction Markets" OR "AI Agents Crypto" OR x402 OR "On-chain Perps" OR "Crypto ETF" OR MiCA OR "CLARITY Act" OR 加密监管',
+)
+
+
 def write_config(
     root: Path,
     schedule_time: str,
@@ -45,6 +53,17 @@ def test_load_config_reads_valid_configuration(tmp_path: Path) -> None:
     assert config.keywords == ("人工智能", "AI 视频")
     assert config.markdown_dir == tmp_path / "data" / "markdown"
     assert config.media_dir == tmp_path / "data" / "media"
+
+
+def test_repository_config_uses_four_approved_daily_topic_groups() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    config = load_config(root)
+
+    assert config.schedule_time == "10:00"
+    assert config.timezone == "Asia/Singapore"
+    assert config.limit_per_keyword == 10
+    assert config.keywords == APPROVED_KEYWORDS
 
 
 def test_load_config_rejects_invalid_schedule_time(tmp_path: Path) -> None:
