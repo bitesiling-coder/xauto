@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import math
 import re
 from typing import Callable, Iterable, Literal, Sequence
@@ -39,6 +39,36 @@ TOPICS = (
         "Web3",
     ),
 )
+
+_X_TIMESTAMP_PATTERN = re.compile(
+    r"^(?P<weekday>Mon|Tue|Wed|Thu|Fri|Sat|Sun) "
+    r"(?P<month>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
+    r"(?P<day>0[1-9]|[12][0-9]|3[01]) "
+    r"(?P<hour>[01][0-9]|2[0-3]):(?P<minute>[0-5][0-9]):(?P<second>[0-5][0-9]) "
+    r"(?P<offset_sign>[+-])(?P<offset_hour>[01][0-9]|2[0-3])"
+    r"(?P<offset_minute>[0-5][0-9]) (?P<year>[0-9]{4})$"
+)
+_X_MONTHS = {
+    month: index
+    for index, month in enumerate(
+        (
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ),
+        start=1,
+    )
+}
+_X_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
 @dataclass(frozen=True)
@@ -177,11 +207,35 @@ def _validate_positive_limits(**limits: int) -> None:
 def _parse_timestamp(value: str) -> datetime | None:
     if not isinstance(value, str):
         return None
+    normalized = value.strip()
     try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
         offset = parsed.utcoffset()
     except (ValueError, TypeError, OverflowError):
-        return None
+        match = _X_TIMESTAMP_PATTERN.fullmatch(normalized)
+        if match is None:
+            return None
+        parts = match.groupdict()
+        offset_minutes = int(parts["offset_hour"]) * 60 + int(
+            parts["offset_minute"]
+        )
+        if parts["offset_sign"] == "-":
+            offset_minutes = -offset_minutes
+        try:
+            parsed = datetime(
+                int(parts["year"]),
+                _X_MONTHS[parts["month"]],
+                int(parts["day"]),
+                int(parts["hour"]),
+                int(parts["minute"]),
+                int(parts["second"]),
+                tzinfo=timezone(timedelta(minutes=offset_minutes)),
+            )
+        except (ValueError, OverflowError):
+            return None
+        if _X_WEEKDAYS[parsed.weekday()] != parts["weekday"]:
+            return None
+        offset = parsed.utcoffset()
     if parsed.tzinfo is None or offset is None:
         return None
     return parsed

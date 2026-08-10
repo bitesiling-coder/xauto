@@ -181,6 +181,35 @@ def test_fallback_uses_rolling_window_excludes_old_posts_and_labels_only_prior_d
     assert {item.post.id: item.fallback for item in ranked} == {"today": False, "prior": True}
 
 
+def test_x_native_timestamps_participate_in_today_and_48_hour_fallback() -> None:
+    items = [
+        post("x-today", created_at="Mon Aug 10 03:00:37 +0000 2026"),
+        post("x-prior", created_at="Sun Aug 09 15:00:00 +0000 2026"),
+    ]
+
+    today_only = rank_posts(
+        items,
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+    fallback = rank_posts(
+        items,
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=2,
+    )
+
+    assert [item.post.id for item in today_only] == ["x-today"]
+    assert today_only[0].fallback is False
+    assert {item.post.id: item.fallback for item in fallback} == {
+        "x-today": False,
+        "x-prior": True,
+    }
+
+
 def test_passed_timezone_controls_calendar_day_across_utc_boundary() -> None:
     singapore = ZoneInfo("Asia/Singapore")
     local_now = datetime(2026, 8, 10, 10, 0, tzinfo=singapore)
@@ -455,6 +484,8 @@ def test_invalid_naive_and_too_future_dates_are_ignored() -> None:
         post("valid"),
         post("invalid", created_at="not-a-date"),
         post("naive", created_at="2026-08-10T11:00:00"),
+        post("x-naive", created_at="Mon Aug 10 03:00:37 2026"),
+        post("x-incomplete", created_at="Mon Aug 10 03:00 +0000 2026"),
         post("future", created_at=NOW + timedelta(minutes=5, seconds=1)),
     ]
 

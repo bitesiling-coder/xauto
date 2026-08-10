@@ -193,6 +193,16 @@ def test_dashboard_has_mobile_overflow_and_dialog_containment_contract() -> None
     assert "min-width: 0" in css
 
 
+def test_hidden_elements_override_component_display_rules() -> None:
+    css = _read("assets/styles.css")
+
+    assert re.search(
+        r"\[hidden\]\s*\{[^}]*display:\s*none\s*!important",
+        css,
+        flags=re.DOTALL,
+    )
+
+
 def test_dashboard_builder_accepts_the_real_static_assets() -> None:
     prepared = dashboard_export._prepare_static_sources(ROOT, DASHBOARD)
 
