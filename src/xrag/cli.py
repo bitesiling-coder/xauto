@@ -10,6 +10,8 @@ import typer
 import yaml
 
 from .config import load_config
+from .dashboard_export import DashboardBuilder
+from .dashboard_publish import PagesPublisher
 from .markdown_store import MarkdownStore
 from .media_store import MediaStore
 from .opencli import OpenCLIClient, OpenCLIError
@@ -18,6 +20,8 @@ from .vector_store import VectorStore
 
 
 app = typer.Typer(no_args_is_help=True)
+dashboard_app = typer.Typer(no_args_is_help=True)
+app.add_typer(dashboard_app, name="dashboard")
 T = TypeVar("T")
 
 _SECRET = re.compile(
@@ -68,6 +72,16 @@ def build_service(root: Path) -> XragService:
 
 def build_rebuild_service(root: Path) -> XragService:
     return build_service(root)
+
+
+def build_dashboard(root: Path) -> DashboardBuilder:
+    config = load_config(root.resolve())
+    return DashboardBuilder(config, MarkdownStore(config.markdown_dir))
+
+
+def build_pages_publisher(root: Path) -> PagesPublisher:
+    config = load_config(root.resolve())
+    return PagesPublisher(config.root, config.pages_worktree)
 
 
 def _service(ctx: typer.Context) -> XragService:
@@ -174,8 +188,48 @@ def rebuild(ctx: typer.Context) -> None:
     _print_json(_run(lambda: build_rebuild_service(ctx.obj).rebuild()))
 
 
+@dashboard_app.command("build")
+def dashboard_build(ctx: typer.Context) -> None:
+    _print_json(_run(lambda: build_dashboard(ctx.obj).build()))
+
+
+def _build_and_publish(root: Path) -> dict[str, object]:
+    build_result = build_dashboard(root).build()
+    site_dir = root.resolve() / "data" / "dashboard-site"
+    publish_result = build_pages_publisher(root).publish(site_dir)
+    return {"build": build_result, "publish": publish_result}
+
+
+@dashboard_app.command("publish")
+def dashboard_publish(ctx: typer.Context) -> None:
+    _print_json(_run(lambda: _build_and_publish(ctx.obj)))
+
+
+def _collect_build_publish(root: Path) -> dict[str, object]:
+    collection = build_service(root).collect_all()
+    if sum(counts["stored"] for _, counts in collection) == 0:
+        raise RuntimeError(
+            "Collection stored no posts; dashboard publication stopped"
+        )
+    result = _build_and_publish(root)
+    return {"collection": collection, **result}
+
+
+@dashboard_app.command("update")
+def dashboard_update(ctx: typer.Context) -> None:
+    _print_json(_run(lambda: _collect_build_publish(ctx.obj)))
+
+
 def _print_json(value: Any) -> None:
-    typer.echo(json.dumps(value, ensure_ascii=False, indent=2))
+    typer.echo(
+        json.dumps(value, ensure_ascii=False, indent=2, default=_json_default)
+    )
+
+
+def _json_default(value: object) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 if __name__ == "__main__":

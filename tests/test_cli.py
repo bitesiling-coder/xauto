@@ -51,6 +51,24 @@ class FakeService:
         return {"documents": 2, "chunks": 5, "errors": 0}
 
 
+class FakeDashboardBuilder:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def build(self) -> dict[str, object]:
+        self.calls += 1
+        return {"output": "data/dashboard-site", "posts": 8, "media": 4}
+
+
+class FakePublisher:
+    def __init__(self) -> None:
+        self.paths: list[Path] = []
+
+    def publish(self, path: Path) -> dict[str, object]:
+        self.paths.append(path)
+        return {"changed": True, "branch": "gh-pages"}
+
+
 def install_fake(monkeypatch, service: FakeService) -> list[Path]:
     roots: list[Path] = []
 
@@ -60,6 +78,217 @@ def install_fake(monkeypatch, service: FakeService) -> list[Path]:
 
     monkeypatch.setattr(cli, "build_service", fake_build)
     return roots
+
+
+def test_dashboard_build_does_not_initialize_xrag_service(
+    monkeypatch, tmp_path: Path
+) -> None:
+    dashboard = FakeDashboardBuilder()
+    roots: list[Path] = []
+    monkeypatch.setattr(
+        cli,
+        "build_dashboard",
+        lambda root: roots.append(root) or dashboard,
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_service",
+        lambda root: pytest.fail("service must stay lazy"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_pages_publisher",
+        lambda root: pytest.fail("publisher must stay lazy"),
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "dashboard", "build"]
+    )
+
+    assert result.exit_code == 0
+    assert dashboard.calls == 1
+    assert roots == [tmp_path.resolve()]
+    assert json.loads(result.stdout) == {
+        "output": "data/dashboard-site",
+        "posts": 8,
+        "media": 4,
+    }
+
+
+def test_dashboard_publish_builds_then_pushes(monkeypatch, tmp_path: Path) -> None:
+    events: list[str] = []
+    dashboard = FakeDashboardBuilder()
+    dashboard.build = lambda: events.append("build") or {
+        "output": "data/dashboard-site",
+        "posts": 8,
+        "media": 4,
+    }
+    publisher = FakePublisher()
+    publisher.publish = lambda path: (
+        events.append("publish")
+        or publisher.paths.append(path)
+        or {"changed": True, "branch": "gh-pages"}
+    )
+    monkeypatch.setattr(
+        cli, "build_dashboard", lambda root: dashboard
+    )
+    monkeypatch.setattr(cli, "build_pages_publisher", lambda root: publisher)
+    monkeypatch.setattr(
+        cli,
+        "build_service",
+        lambda root: pytest.fail("service must stay lazy"),
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "dashboard", "publish"]
+    )
+
+    assert result.exit_code == 0
+    assert events == ["build", "publish"]
+    assert publisher.paths == [tmp_path.resolve() / "data" / "dashboard-site"]
+    assert json.loads(result.stdout) == {
+        "build": {"output": "data/dashboard-site", "posts": 8, "media": 4},
+        "publish": {"changed": True, "branch": "gh-pages"},
+    }
+
+
+def test_dashboard_update_collects_before_build_and_publish(
+    monkeypatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    service = FakeService()
+    service.collect_all = lambda: events.append("collect") or [
+        ("query", {"found": 1, "stored": 1, "chunks": 1, "errors": 0})
+    ]
+    dashboard = FakeDashboardBuilder()
+    dashboard.build = lambda: events.append("build") or {
+        "output": str(tmp_path / "data" / "dashboard-site"),
+        "posts": 1,
+        "media": 0,
+    }
+    publisher = FakePublisher()
+    publisher.publish = lambda path: events.append("publish") or {
+        "changed": True,
+        "branch": "gh-pages",
+    }
+    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(
+        cli, "build_dashboard", lambda root: dashboard
+    )
+    monkeypatch.setattr(cli, "build_pages_publisher", lambda root: publisher)
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "dashboard", "update"]
+    )
+
+    assert result.exit_code == 0
+    assert events == ["collect", "build", "publish"]
+    assert json.loads(result.stdout)["collection"][0][1]["stored"] == 1
+
+
+def test_dashboard_update_stops_before_build_when_collection_stores_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    service = FakeService()
+    service.collect_all = lambda: [
+        ("query", {"found": 0, "stored": 0, "chunks": 0, "errors": 1})
+    ]
+    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(
+        cli,
+        "build_dashboard",
+        lambda root: pytest.fail("build must not run"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_pages_publisher",
+        lambda root: pytest.fail("publish must not run"),
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "dashboard", "update"]
+    )
+
+    assert result.exit_code == 2
+    assert result.stderr == (
+        "Error: Collection stored no posts; dashboard publication stopped\n"
+    )
+    assert "Traceback" not in result.output
+
+
+def test_dashboard_results_encode_paths_as_stable_json(
+    monkeypatch, tmp_path: Path
+) -> None:
+    dashboard = FakeDashboardBuilder()
+    dashboard.build = lambda: {
+        "output_path": tmp_path / "data" / "dashboard-site" / "data" / "latest.json",
+        "post_count": 1,
+    }
+    monkeypatch.setattr(
+        cli, "build_dashboard", lambda root: dashboard
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "dashboard", "build"]
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "output_path": str(
+            tmp_path / "data" / "dashboard-site" / "data" / "latest.json"
+        ),
+        "post_count": 1,
+    }
+
+
+def test_dashboard_factories_load_config_without_initializing_vector_store(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from xrag.config import AppConfig
+
+    configuration = AppConfig(
+        tmp_path.resolve(), False, "03:00", "UTC", 7, 0, ("AI",), "model"
+    )
+    loaded_roots: list[Path] = []
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda root: loaded_roots.append(root) or configuration,
+    )
+    monkeypatch.setattr(
+        cli.VectorStore,
+        "persistent",
+        lambda *args, **kwargs: pytest.fail("vector store must stay lazy"),
+    )
+
+    dashboard = cli.build_dashboard(tmp_path / ".")
+    publisher = cli.build_pages_publisher(tmp_path / ".")
+
+    assert dashboard.config is configuration
+    assert dashboard.markdown.directory == configuration.markdown_dir
+    assert publisher.root == configuration.root
+    assert publisher.worktree == configuration.pages_worktree
+    assert loaded_roots == [tmp_path.resolve(), tmp_path.resolve()]
+
+
+def test_dashboard_operational_error_is_redacted_without_traceback(
+    monkeypatch, tmp_path: Path
+) -> None:
+    dashboard = FakeDashboardBuilder()
+    dashboard.build = lambda: (_ for _ in ()).throw(
+        RuntimeError("publish failed Authorization: Bearer dashboard-secret")
+    )
+    monkeypatch.setattr(cli, "build_dashboard", lambda root: dashboard)
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "dashboard", "build"]
+    )
+
+    assert result.exit_code == 2
+    assert "Error: publish failed" in result.stderr
+    assert "authorization=[REDACTED]" in result.stderr
+    assert "dashboard-secret" not in result.output
+    assert "Traceback" not in result.output
 
 
 def test_collect_keyword_prints_summary_and_forwards_arguments(monkeypatch, tmp_path: Path) -> None:
