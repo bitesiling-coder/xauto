@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -12,7 +13,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.importers import load_posts
 from xrag.markdown_store import MarkdownStore
-from xrag.models import LocalMedia, Post, QuotedPost
+from xrag.models import LocalMedia, Post, QuotedPost, TranslationMetadata
+
+
+def translation_mapping(text: str, **changes: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "language": "zh-CN",
+        "model_id": "translator-v1",
+        "revision": "r1",
+        "source_sha256": hashlib.sha256(text.strip().encode("utf-8")).hexdigest(),
+        "translated_at": "2026-08-10T00:00:00Z",
+    }
+    values.update(changes)
+    return values
 
 
 def test_load_posts_imports_yaml_and_json_lists(tmp_path: Path) -> None:
@@ -23,6 +36,117 @@ def test_load_posts_imports_yaml_and_json_lists(tmp_path: Path) -> None:
 
     assert [post.id for post in load_posts(yaml_path)] == ["yaml-1"]
     assert [post.id for post in load_posts(json_path)] == ["json-1"]
+
+
+@pytest.mark.parametrize("suffix", [".yaml", ".json"])
+def test_load_posts_imports_main_and_quoted_translations(
+    tmp_path: Path, suffix: str
+) -> None:
+    text = "original\nmultiline"
+    quoted_text = "quoted original"
+    row = {
+        "id": "translated",
+        "text": text,
+        "text_zh": "第一行\n\n第二行",
+        "translation_zh": translation_mapping(text),
+        "quoted_tweet": {
+            "id": "quote",
+            "author": "Bob",
+            "text": quoted_text,
+            "created_at": "",
+            "url": "https://x.com/i/status/quote",
+            "media_urls": [],
+            "media_posters": [],
+            "text_zh": "引用译文",
+            "translation_zh": translation_mapping(quoted_text),
+        },
+    }
+    path = tmp_path / f"translated{suffix}"
+    if suffix == ".json":
+        path.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+    else:
+        path.write_text(yaml.safe_dump(row, allow_unicode=True), encoding="utf-8")
+
+    [post] = load_posts(path)
+
+    assert post.text == text
+    assert post.text_zh == "第一行\n\n第二行"
+    assert post.translation_zh == TranslationMetadata(**translation_mapping(text))
+    assert post.quoted_post is not None
+    assert post.quoted_post.text_zh == "引用译文"
+    assert post.quoted_post.translation_zh == TranslationMetadata(
+        **translation_mapping(quoted_text)
+    )
+
+
+def test_load_posts_round_trips_canonical_bilingual_markdown(tmp_path: Path) -> None:
+    text = " exact original\nsecond line "
+    metadata = TranslationMetadata(**translation_mapping(text))
+    original = Post(
+        "123", "Ada", text, "", "https://x.com/i/status/123",
+        text_zh="译文第一行\n\n译文第三行", translation_zh=metadata,
+    )
+    path = MarkdownStore(tmp_path).upsert(original)
+
+    [post] = load_posts(path)
+
+    assert post.text == text.strip()
+    assert post.text_zh == original.text_zh
+    assert post.translation_zh == metadata
+
+
+def test_load_posts_does_not_infer_translation_from_noncanonical_heading(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "external.md"
+    path.write_text(
+        "---\nid: external\n---\nOriginal\n\n## 中文翻译（机器翻译）\nNot metadata\n",
+        encoding="utf-8",
+    )
+
+    [post] = load_posts(path)
+
+    assert post.text_zh == ""
+    assert post.translation_zh is None
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"id": "post", "text": "original", "text_zh": "译文"},
+        {
+            "id": "post",
+            "text": "original",
+            "translation_zh": translation_mapping("original"),
+        },
+        {
+            "id": "post",
+            "text": "original",
+            "text_zh": "译文",
+            "translation_zh": translation_mapping("different"),
+        },
+        {
+            "id": "post",
+            "text": "original",
+            "text_zh": "译文",
+            "translation_zh": {**translation_mapping("original"), "extra": "no"},
+        },
+        {
+            "id": "post",
+            "text": "original",
+            "text_zh": "译文",
+            "translation_zh": [],
+        },
+    ],
+)
+def test_load_posts_rejects_invalid_translation_pairs(
+    tmp_path: Path, row: dict[str, object]
+) -> None:
+    path = tmp_path / "invalid.json"
+    path.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises((TypeError, ValueError)):
+        load_posts(path)
 
 
 @pytest.mark.parametrize("suffix, content", [

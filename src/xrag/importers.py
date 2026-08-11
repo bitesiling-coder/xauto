@@ -12,7 +12,10 @@ from .markdown_store import (
     _is_canonical_metadata,
     _local_media_from_value,
     _quoted_from_value,
+    _translation_from_value,
+    _validate_translation_pair,
     extract_body_text,
+    extract_body_translation,
 )
 from .models import Post
 
@@ -76,6 +79,10 @@ def _load_markdown(path: Path) -> dict[str, object]:
         content[end + len("\n---\n") :],
         canonical=_is_canonical_metadata(row),
     )
+    row["text_zh"] = extract_body_translation(
+        content[end + len("\n---\n") :],
+        canonical=_is_canonical_metadata(row),
+    )
     return row
 
 
@@ -96,6 +103,10 @@ def _normalize_row(row: Mapping[object, object]) -> Post:
     text = _string(row.get("text"))
     if not text:
         raise ValueError("Each imported post requires nonempty text")
+    translation_zh = _translation_from_value(row.get("translation_zh"))
+    text_zh = _validate_translation_pair(
+        text, row.get("text_zh", ""), translation_zh, "translation_zh"
+    )
 
     return Post(
         id=post_id,
@@ -112,6 +123,8 @@ def _normalize_row(row: Mapping[object, object]) -> Post:
         local_media=_local_media_from_value(row.get("local_media", [])),
         source_keywords=_strings(row.get("source_keywords")),
         source_type="import",
+        text_zh=text_zh,
+        translation_zh=translation_zh,
     )
 
 

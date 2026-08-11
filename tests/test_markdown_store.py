@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -8,8 +9,20 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import xrag.markdown_store as markdown_store
-from xrag.markdown_store import MarkdownStore
-from xrag.models import LocalMedia, Post, QuotedPost
+from xrag.markdown_store import MarkdownStore, extract_body_text, extract_body_translation
+from xrag.models import LocalMedia, Post, QuotedPost, TranslationMetadata
+
+
+def translation_for(text: str, **changes: object) -> TranslationMetadata:
+    values: dict[str, object] = {
+        "language": "zh-CN",
+        "model_id": "translator-v1",
+        "revision": "r1",
+        "source_sha256": hashlib.sha256(text.strip().encode("utf-8")).hexdigest(),
+        "translated_at": "2026-08-10T00:00:00Z",
+    }
+    values.update(changes)
+    return TranslationMetadata(**values)  # type: ignore[arg-type]
 
 
 def make_post(**changes: object) -> Post:
@@ -97,9 +110,252 @@ legacy body
     assert post.media_posters == ()
     assert post.quoted_post is None
     assert post.local_media == ()
+    assert post.text_zh == ""
+    assert post.translation_zh is None
 
 
-def test_round_trip_preserves_text_containing_canonical_markers(tmp_path: Path) -> None:
+def test_read_supports_old_canonical_body_without_translation(tmp_path: Path) -> None:
+    store = MarkdownStore(tmp_path)
+    path = store.upsert(make_post(text="original"))
+
+    post = store.read(path)
+
+    assert post.text == "original"
+    assert post.text_zh == ""
+    assert post.translation_zh is None
+
+
+def test_upsert_round_trips_main_translation_and_renders_before_media(tmp_path: Path) -> None:
+    text = "  exact original\nwith formatting  "
+    text_zh = "第一行\n\n  缩进保留\n最后一行"
+    metadata = translation_for(text)
+    store = MarkdownStore(tmp_path)
+
+    path = store.upsert(make_post(text=text, text_zh=text_zh, translation_zh=metadata))
+
+    content = path.read_text(encoding="utf-8")
+    expected = (
+        "## 中文翻译（机器翻译）\n\n"
+        "<!-- xrag:text-zh:start -->\n"
+        f"{text_zh}\n"
+        "<!-- xrag:text-zh:end -->"
+    )
+    assert expected in content
+    assert content.index("<!-- xrag:text:end -->") < content.index(expected)
+    assert content.index(expected) < content.index("## 媒体")
+    assert "translation_zh:" in content
+    assert store.read(path) == make_post(
+        text=text.strip(), text_zh=text_zh, translation_zh=metadata
+    )
+
+
+def test_upsert_round_trips_quoted_translation_and_renders_readable_blockquote(
+    tmp_path: Path,
+) -> None:
+    quoted_text = "quoted original"
+    quoted_zh = "引用第一行\n\n引用第三行"
+    quoted = QuotedPost(
+        "456",
+        "quoted",
+        quoted_text,
+        "2026-08-07T00:00:00Z",
+        "https://x.com/quoted/status/456",
+        text_zh=quoted_zh,
+        translation_zh=translation_for(quoted_text),
+    )
+    store = MarkdownStore(tmp_path)
+
+    path = store.upsert(make_post(quoted_post=quoted))
+
+    content = path.read_text(encoding="utf-8")
+    assert (
+        "> @quoted：quoted original\n\n"
+        "> **中文翻译（机器翻译）**\n"
+        "> 引用第一行\n"
+        ">\n"
+        "> 引用第三行"
+    ) in content
+    assert store.read(path).quoted_post == quoted
+
+
+def test_upsert_normalizes_quoted_translation_newline_boundaries(tmp_path: Path) -> None:
+    quoted_text = "quoted original"
+    quoted = QuotedPost(
+        "456", "quoted", quoted_text, "", "https://x.com/i/status/456",
+        text_zh="\n引用译文\n", translation_zh=translation_for(quoted_text),
+    )
+
+    store = MarkdownStore(tmp_path)
+    path = store.upsert(make_post(quoted_post=quoted))
+    post = store.read(path)
+
+    assert post.quoted_post is not None
+    assert post.quoted_post.text_zh == "引用译文"
+    assert "> **中文翻译（机器翻译）**\n> 引用译文" in path.read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    "text_zh, metadata",
+    [
+        ("", translation_for("original")),
+        ("   ", translation_for("original")),
+        ("译文", None),
+    ],
+)
+def test_upsert_rejects_main_translation_half_pairs_before_creating_directory(
+    tmp_path: Path, text_zh: str, metadata: TranslationMetadata | None
+) -> None:
+    target = tmp_path / "missing" / "posts"
+
+    with pytest.raises(ValueError, match="text_zh.*translation_zh"):
+        MarkdownStore(target).upsert(
+            make_post(text="original", text_zh=text_zh, translation_zh=metadata)
+        )
+
+    assert not target.exists()
+
+
+def test_upsert_rejects_stale_main_and_quoted_translation_hashes_before_writing(
+    tmp_path: Path,
+) -> None:
+    store = MarkdownStore(tmp_path / "missing")
+    stale = translation_for("different")
+    with pytest.raises(ValueError, match="source_sha256"):
+        store.upsert(make_post(text="original", text_zh="译文", translation_zh=stale))
+    assert not store.directory.exists()
+
+    quoted = QuotedPost(
+        "456", "quoted", "quoted original", "", "https://x.com/i/status/456",
+        text_zh="引用译文", translation_zh=stale,
+    )
+    with pytest.raises(ValueError, match="source_sha256"):
+        store.upsert(make_post(quoted_post=quoted))
+    assert not store.directory.exists()
+
+
+def test_upsert_rejects_quoted_translation_half_pair_before_creating_directory(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "missing" / "posts"
+    quoted = QuotedPost(
+        "456", "quoted", "quoted original", "", "https://x.com/i/status/456",
+        text_zh="引用译文",
+    )
+
+    with pytest.raises(ValueError, match="quoted_tweet.translation_zh"):
+        MarkdownStore(target).upsert(make_post(quoted_post=quoted))
+
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"language": "zh"},
+        {"model_id": " "},
+        {"revision": ""},
+        {"source_sha256": "A" * 64},
+        {"source_sha256": "0" * 63},
+        {"translated_at": "\t"},
+    ],
+)
+def test_upsert_rejects_invalid_translation_metadata(
+    tmp_path: Path, changes: dict[str, object]
+) -> None:
+    with pytest.raises(ValueError):
+        MarkdownStore(tmp_path / "missing").upsert(
+            make_post(
+                text="original",
+                text_zh="译文",
+                translation_zh=translation_for("original", **changes),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "translation_zh: []",
+        "translation_zh:\n  language: zh-CN",
+        (
+            "translation_zh:\n  language: zh-CN\n  model_id: m\n  revision: r\n"
+            "  source_sha256: '" + "0" * 64 + "'\n  translated_at: now\n  extra: no"
+        ),
+        (
+            "translation_zh:\n  language: 7\n  model_id: m\n  revision: r\n"
+            "  source_sha256: '" + "0" * 64 + "'\n  translated_at: now"
+        ),
+    ],
+)
+def test_read_wraps_invalid_translation_frontmatter(
+    tmp_path: Path, replacement: str
+) -> None:
+    text = "original"
+    path = MarkdownStore(tmp_path).upsert(
+        make_post(text=text, text_zh="译文", translation_zh=translation_for(text))
+    )
+    content = path.read_text(encoding="utf-8")
+    start = content.index("translation_zh:")
+    end = content.index("\n---\n", start)
+    path.write_text(content[:start] + replacement + "\n" + content[end:], encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid Markdown front matter"):
+        MarkdownStore(tmp_path).read(path)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<!-- xrag:text-zh:start -->\n译文",
+        "译文\n<!-- xrag:text-zh:end -->",
+        (
+            "<!-- xrag:text-zh:start -->\na\n<!-- xrag:text-zh:start -->\nb\n"
+            "<!-- xrag:text-zh:end -->"
+        ),
+        "<!-- xrag:text-zh:end -->\n译文\n<!-- xrag:text-zh:start -->",
+        "<!-- xrag:text-zh:start -->\n\n<!-- xrag:text-zh:end -->",
+        (
+            "<!-- xrag:text:start -->\noriginal\n<!-- xrag:text-zh:start -->\n译文\n"
+            "<!-- xrag:text:end -->\n<!-- xrag:text-zh:end -->"
+        ),
+    ],
+)
+def test_extract_body_translation_rejects_invalid_markers(body: str) -> None:
+    with pytest.raises(ValueError, match="invalid canonical Markdown translation markers"):
+        extract_body_translation(body)
+
+
+def test_extract_body_translation_ignores_legacy_and_preserves_internal_formatting() -> None:
+    legacy = "## 中文翻译（机器翻译）\nnot canonical"
+    canonical = (
+        "<!-- xrag:text:start -->\noriginal\n<!-- xrag:text:end -->\n"
+        "<!-- xrag:text-zh:start -->\n第一行\n\n  indented\n<!-- xrag:text-zh:end -->"
+    )
+
+    assert extract_body_translation(legacy, canonical=False) == ""
+    assert extract_body_translation("canonical without markers") == ""
+    assert extract_body_translation(canonical) == "第一行\n\n  indented"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<!-- xrag:text:start -->\na\n<!-- xrag:text:start -->\nb\n<!-- xrag:text:end -->",
+        "<!-- xrag:text:end -->\na\n<!-- xrag:text:start -->",
+        (
+            "<!-- xrag:text:start -->\noriginal\n<!-- xrag:text-zh:start -->\n译文\n"
+            "<!-- xrag:text:end -->\n<!-- xrag:text-zh:end -->"
+        ),
+    ],
+)
+def test_extract_body_text_rejects_ambiguous_canonical_markers(body: str) -> None:
+    with pytest.raises(ValueError, match="invalid canonical Markdown text markers"):
+        extract_body_text(body)
+
+
+def test_read_rejects_text_containing_ambiguous_canonical_markers(tmp_path: Path) -> None:
     text = (
         "before\n<!-- xrag:text:start -->\nmiddle\n"
         "<!-- xrag:text:end -->\nafter"
@@ -108,7 +364,8 @@ def test_round_trip_preserves_text_containing_canonical_markers(tmp_path: Path) 
 
     path = store.upsert(make_post(text=text))
 
-    assert store.read(path).text == text
+    with pytest.raises(ValueError, match="invalid Markdown front matter"):
+        store.read(path)
 
 
 def test_legacy_body_treats_marker_literals_as_plain_text(tmp_path: Path) -> None:

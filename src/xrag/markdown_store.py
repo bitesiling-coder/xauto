@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -9,7 +10,7 @@ import tempfile
 
 import yaml
 
-from .models import LocalMedia, Post, QuotedPost
+from .models import LocalMedia, Post, QuotedPost, TranslationMetadata
 
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
@@ -29,6 +30,16 @@ _FRONT_MATTER_FIELDS = (
 )
 _TEXT_START = "<!-- xrag:text:start -->"
 _TEXT_END = "<!-- xrag:text:end -->"
+_TEXT_ZH_START = "<!-- xrag:text-zh:start -->"
+_TEXT_ZH_END = "<!-- xrag:text-zh:end -->"
+_TRANSLATION_FIELDS = {
+    "language",
+    "model_id",
+    "revision",
+    "source_sha256",
+    "translated_at",
+}
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class MarkdownStore:
@@ -39,9 +50,31 @@ class MarkdownStore:
         self._clock = clock or (lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
 
     def upsert(self, post: Post) -> Path:
+        text_zh = _validate_translation_pair(
+            post.text, post.text_zh, post.translation_zh, "translation_zh"
+        )
+        quoted_post = post.quoted_post
+        if post.quoted_post is not None:
+            quoted_text_zh = _validate_translation_pair(
+                post.quoted_post.text,
+                post.quoted_post.text_zh,
+                post.quoted_post.translation_zh,
+                "quoted_tweet.translation_zh",
+            )
+            quoted_post = QuotedPost(
+                id=post.quoted_post.id,
+                author=post.quoted_post.author,
+                text=post.quoted_post.text,
+                created_at=post.quoted_post.created_at,
+                url=post.quoted_post.url,
+                media_urls=post.quoted_post.media_urls,
+                media_posters=post.quoted_post.media_posters,
+                text_zh=quoted_text_zh,
+                translation_zh=post.quoted_post.translation_zh,
+            )
         path = self._path_for(post.id)
-        self.directory.mkdir(parents=True, exist_ok=True)
         self.validate_target(post.id)
+        self.directory.mkdir(parents=True, exist_ok=True)
         now = self._clock()
         keywords = post.source_keywords
         collected_at = now
@@ -61,10 +94,12 @@ class MarkdownStore:
             views=int(post.views),
             media_urls=_strings(post.media_urls),
             media_posters=_strings(post.media_posters),
-            quoted_post=post.quoted_post,
+            quoted_post=quoted_post,
             local_media=tuple(post.local_media),
             source_keywords=_deduplicate(keywords),
             source_type=str(post.source_type),
+            text_zh=text_zh,
+            translation_zh=post.translation_zh,
         )
         metadata = {
             "id": normalized.id,
@@ -84,6 +119,10 @@ class MarkdownStore:
             "source_keywords": list(normalized.source_keywords),
             "source_type": normalized.source_type,
         }
+        if normalized.translation_zh is not None:
+            metadata["translation_zh"] = _translation_to_mapping(
+                normalized.translation_zh
+            )
         content = "---\n" + yaml.safe_dump(
             metadata, allow_unicode=True, sort_keys=False, default_flow_style=False
         ) + "---\n\n" + _render_body(normalized)
@@ -93,10 +132,17 @@ class MarkdownStore:
     def read(self, path: Path) -> Post:
         metadata, body = self._parse(Path(path))
         try:
+            canonical = _is_canonical_metadata(metadata)
+            text = extract_body_text(body, canonical=canonical)
+            text_zh = extract_body_translation(body, canonical=canonical)
+            translation_zh = _translation_from_value(metadata.get("translation_zh"))
+            text_zh = _validate_translation_pair(
+                text, text_zh, translation_zh, "translation_zh"
+            )
             return Post(
                 id=_scalar(metadata["id"], "id"),
                 author=_scalar(metadata["author"], "author"),
-                text=extract_body_text(body, canonical=_is_canonical_metadata(metadata)),
+                text=text,
                 created_at=_scalar(metadata["created_at"], "created_at"),
                 url=_scalar(metadata["url"], "url"),
                 bio=_scalar(metadata["author_bio"], "author_bio"),
@@ -108,6 +154,8 @@ class MarkdownStore:
                 local_media=_local_media_from_value(metadata.get("local_media", [])),
                 source_keywords=_strings(metadata["source_keywords"]),
                 source_type=_scalar(metadata["source_type"], "source_type"),
+                text_zh=text_zh,
+                translation_zh=translation_zh,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError(f"invalid Markdown front matter in {path}: {error}") from error
@@ -185,17 +233,52 @@ class MarkdownStore:
 def extract_body_text(body: str, *, canonical: bool = True) -> str:
     if not canonical:
         return body.strip()
-    has_start = _TEXT_START in body
-    has_end = _TEXT_END in body
-    if not has_start and not has_end:
+    start_count = body.count(_TEXT_START)
+    end_count = body.count(_TEXT_END)
+    if start_count == 0 and end_count == 0:
+        if _TEXT_ZH_START in body or _TEXT_ZH_END in body:
+            raise ValueError("invalid canonical Markdown text markers")
         return body.strip()
-    if not has_start or not has_end:
+    if start_count != 1 or end_count != 1:
         raise ValueError("invalid canonical Markdown text markers")
     start = body.find(_TEXT_START)
-    end = body.rfind(_TEXT_END)
+    end = body.find(_TEXT_END)
     if end < start + len(_TEXT_START):
         raise ValueError("invalid canonical Markdown text markers")
+    if _TEXT_ZH_START in body or _TEXT_ZH_END in body:
+        try:
+            extract_body_translation(body, canonical=True)
+        except ValueError as error:
+            raise ValueError("invalid canonical Markdown text markers") from error
     return body[start + len(_TEXT_START) : end].strip("\n")
+
+
+def extract_body_translation(body: str, *, canonical: bool = True) -> str:
+    if not canonical:
+        return ""
+    start_count = body.count(_TEXT_ZH_START)
+    end_count = body.count(_TEXT_ZH_END)
+    if start_count == 0 and end_count == 0:
+        return ""
+    if start_count != 1 or end_count != 1:
+        raise ValueError("invalid canonical Markdown translation markers")
+    start = body.find(_TEXT_ZH_START)
+    end = body.find(_TEXT_ZH_END)
+    if end < start + len(_TEXT_ZH_START):
+        raise ValueError("invalid canonical Markdown translation markers")
+    if body.count(_TEXT_START) != 1 or body.count(_TEXT_END) != 1:
+        raise ValueError("invalid canonical Markdown translation markers")
+    original_start = body.find(_TEXT_START)
+    original_end = body.find(_TEXT_END)
+    if (
+        original_end < original_start + len(_TEXT_START)
+        or original_end + len(_TEXT_END) > start
+    ):
+        raise ValueError("invalid canonical Markdown translation markers")
+    text_zh = body[start + len(_TEXT_ZH_START) : end].strip("\n")
+    if not text_zh.strip():
+        raise ValueError("invalid canonical Markdown translation markers")
+    return text_zh
 
 
 def _render_body(post: Post) -> str:
@@ -208,6 +291,17 @@ def _render_body(post: Post) -> str:
         post.text,
         _TEXT_END,
     ]
+    if post.translation_zh is not None:
+        lines.extend(
+            [
+                "",
+                "## 中文翻译（机器翻译）",
+                "",
+                _TEXT_ZH_START,
+                post.text_zh,
+                _TEXT_ZH_END,
+            ]
+        )
     top_media = [item for item in post.local_media if item.owner == "post"]
     if top_media or any(_is_video_url(url) for url in post.media_urls):
         lines.extend(["", "## 媒体", ""])
@@ -226,6 +320,10 @@ def _render_body(post: Post) -> str:
                 *[f"> {line}" for line in quoted_lines[1:]],
             ]
         )
+        if post.quoted_post.translation_zh is not None:
+            lines.extend(["", "> **中文翻译（机器翻译）**"])
+            for line in post.quoted_post.text_zh.splitlines() or [""]:
+                lines.append(f"> {line}" if line else ">")
         quoted_media = [item for item in post.local_media if item.owner == "quoted"]
         if quoted_media:
             lines.extend(["", *_render_media(quoted_media, quoted=True)])
@@ -274,7 +372,7 @@ def _is_canonical_metadata(metadata: dict[str, object]) -> bool:
 def _quoted_to_mapping(value: QuotedPost | None) -> dict[str, object] | None:
     if value is None:
         return None
-    return {
+    mapping: dict[str, object] = {
         "id": value.id,
         "author": value.author,
         "text": value.text,
@@ -283,6 +381,10 @@ def _quoted_to_mapping(value: QuotedPost | None) -> dict[str, object] | None:
         "media_urls": list(value.media_urls),
         "media_posters": list(value.media_posters),
     }
+    if value.translation_zh is not None:
+        mapping["text_zh"] = value.text_zh
+        mapping["translation_zh"] = _translation_to_mapping(value.translation_zh)
+    return mapping
 
 
 def _quoted_from_value(value: object) -> QuotedPost | None:
@@ -291,14 +393,24 @@ def _quoted_from_value(value: object) -> QuotedPost | None:
     if not isinstance(value, dict):
         raise ValueError("quoted_tweet must be a mapping or null")
     try:
+        text = _mapping_string(value, "text", "quoted_tweet")
+        translation_zh = _translation_from_value(value.get("translation_zh"))
+        text_zh = _validate_translation_pair(
+            text,
+            value.get("text_zh", ""),
+            translation_zh,
+            "quoted_tweet.translation_zh",
+        )
         return QuotedPost(
             id=_mapping_string(value, "id", "quoted_tweet"),
             author=_mapping_string(value, "author", "quoted_tweet"),
-            text=_mapping_string(value, "text", "quoted_tweet"),
+            text=text,
             created_at=_mapping_string(value, "created_at", "quoted_tweet"),
             url=_mapping_string(value, "url", "quoted_tweet"),
             media_urls=_strings(value.get("media_urls", [])),
             media_posters=_strings(value.get("media_posters", [])),
+            text_zh=text_zh,
+            translation_zh=translation_zh,
         )
     except (TypeError, ValueError) as error:
         raise ValueError(f"invalid quoted_tweet: {error}") from error
@@ -344,6 +456,75 @@ def _mapping_string(value: dict[object, object], key: str, field: str) -> str:
     if not isinstance(item, str):
         raise ValueError(f"{field}.{key} must be a string")
     return item
+
+
+def _translation_to_mapping(
+    value: TranslationMetadata | None,
+) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, TranslationMetadata):
+        raise TypeError("translation metadata must be TranslationMetadata or null")
+    mapping = {
+        "language": value.language,
+        "model_id": value.model_id,
+        "revision": value.revision,
+        "source_sha256": value.source_sha256,
+        "translated_at": value.translated_at,
+    }
+    _validate_translation_mapping(mapping)
+    return mapping
+
+
+def _translation_from_value(value: object) -> TranslationMetadata | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("translation metadata must be a mapping or null")
+    _validate_translation_mapping(value)
+    return TranslationMetadata(
+        language=value["language"],
+        model_id=value["model_id"],
+        revision=value["revision"],
+        source_sha256=value["source_sha256"],
+        translated_at=value["translated_at"],
+    )
+
+
+def _validate_translation_mapping(value: dict[object, object]) -> None:
+    if set(value) != _TRANSLATION_FIELDS:
+        raise ValueError("translation metadata must contain exactly the required fields")
+    for field in ("language", "model_id", "revision", "translated_at"):
+        item = value[field]
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"translation metadata {field} must be a nonblank string")
+    if value["language"] != "zh-CN":
+        raise ValueError("translation metadata language must be zh-CN")
+    source_sha256 = value["source_sha256"]
+    if not isinstance(source_sha256, str) or not _SHA256.fullmatch(source_sha256):
+        raise ValueError("translation metadata source_sha256 must be 64 lowercase hex characters")
+
+
+def _validate_translation_pair(
+    source_text: object,
+    text_zh: object,
+    metadata: TranslationMetadata | None,
+    field: str,
+) -> str:
+    if not isinstance(text_zh, str):
+        raise TypeError(f"{field} text_zh must be a string")
+    normalized_text_zh = text_zh.strip("\n")
+    mapping = _translation_to_mapping(metadata)
+    has_text = bool(normalized_text_zh.strip())
+    if has_text != (mapping is not None):
+        raise ValueError(f"{field}: text_zh and translation_zh must both be present or absent")
+    if mapping is not None:
+        if not isinstance(source_text, str):
+            raise TypeError(f"{field} source text must be a string")
+        expected = hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()
+        if mapping["source_sha256"] != expected:
+            raise ValueError(f"{field}.source_sha256 does not match source text")
+    return normalized_text_zh if has_text else ""
 
 
 def _strings(value: object) -> tuple[str, ...]:
