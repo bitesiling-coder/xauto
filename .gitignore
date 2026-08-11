@@ -8,6 +8,7 @@ data/imports/
 data/media/
 data/chroma/
 data/dashboard-site/
+data/models/
 logs/
 .xrag.lock
 .superpowers/

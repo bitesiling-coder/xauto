@@ -56,6 +56,7 @@ def test_load_config_reads_valid_configuration(tmp_path: Path) -> None:
     assert config.dashboard_dir == tmp_path / "data" / "dashboard-site"
     assert config.dashboard_source_dir == tmp_path / "dashboard"
     assert config.pages_worktree == tmp_path / ".worktrees" / "x-rag-pages"
+    assert config.translation_model_dir == tmp_path / "data" / "models" / "translation"
 
 
 def test_repository_config_uses_four_approved_daily_topic_groups() -> None:

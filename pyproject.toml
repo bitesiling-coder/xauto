@@ -8,9 +8,13 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
   "chromadb>=1.0,<2",
+  "huggingface-hub>=0.34,<2",
   "portalocker>=3,<4",
   "PyYAML>=6,<7",
+  "sacremoses>=0.1,<1",
   "sentence-transformers>=5,<6",
+  "sentencepiece>=0.2,<1",
+  "transformers>=5,<6",
   "typer>=0.16,<1",
 ]
 

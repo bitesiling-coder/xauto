@@ -48,6 +48,10 @@ class AppConfig:
         return self.root / "data" / "chroma"
 
     @property
+    def translation_model_dir(self) -> Path:
+        return self.root / "data" / "models" / "translation"
+
+    @property
     def log_dir(self) -> Path:
         return self.root / "logs"
 
