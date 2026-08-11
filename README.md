@@ -76,6 +76,27 @@ xrag --root . rebuild
 - `data/markdown/` 是可读、可备份的权威帖子库；`data/imports/` 是建议的待导入目录；`data/chroma/` 是可丢弃索引。
 - `logs/last-run.json` 保存最近一次 collect/import/rebuild 摘要；OpenCLI 搜索失败时会记录该关键词、零写入计数和 `outcome: failed`。OpenCLI 返回的畸形行计入 `found/errors` 并以脱敏诊断写入 `logs/errors.jsonl`，不会生成 Markdown 或进入向量索引。`logs/scheduler.log` 接收计划任务的标准输出和错误。
 
+## 本地英译中（离线运行）
+
+X-RAG 使用免费的 `Helsinki-NLP/opus-mt-en-zh` 本地模型为以英文为主的帖子和引用帖生成中文译文；不调用收费翻译 API，也不会把帖子正文发送给云端翻译服务。首次安装需要网络下载模型，之后收集、导入、补译和每日任务均从项目内的已验证快照加载模型，可在离线环境运行。
+
+在 WSL 项目根目录先安装并校验模型，再开始手动收集或启用计划任务：
+
+```bash
+xrag --root . translation install
+xrag --root . translation backfill
+```
+
+`translation install` 只下载、逐文件校验并原子发布模型，不读取或改写帖子。模型安装在 Git 忽略的 `data/models/translation/`：其中的 `manifest.json` 指向已校验的 `snapshots/<revision>/`。安装时磁盘会增加一个模型快照，并可能暂时保留一份下载/安装缓存；请在升级前预留当前快照加一份暂存下载所需的空间，并可用 `du -sh data/models/translation` 查看项目内实际占用。不要清理该目录或 Hugging Face 的本地缓存，除非已确认不再需要离线翻译。模型升级和删除均为人工操作；系统不会自动下载、升级或删除翻译模型，历史快照也不会自动裁剪。
+
+`translation backfill` 在写锁下扫描现有权威 Markdown，只为缺少或已经过期的英文译文写入原子更新，然后原子重建 RAG 索引。它输出 `scanned`、`translated`、`reused`、`skipped` 和 `errors` 计数；日常 `collect`/`dashboard update` 每个关键词还会输出 `translated`、`reused`、`skipped` 和 `translation-errors`。中文搜索会同时检索英文原文和中文译文；看板卡片优先显示中文译文并标注“机器翻译”，详情页分别保留中文译文与英文原文。译文是机器生成的，只应用作阅读辅助，应按原始帖子和链接核对事实与语境。
+
+Markdown 的 `text_zh`/`translation_zh` 是本地权威存档的一部分。翻译元数据记录目标语言 `zh-CN`、模型 ID、已安装快照 revision、英文源文本的 SHA-256 和翻译时间，用来判断能否安全复用译文；它不是原文替代品，也不会作为模型路径、缓存或内部哈希公开到看板。
+
+安装和补译可以新增模型文件，或原子更新需要译文的项目文件，但不会删除既有 Markdown、媒体或电脑中的其他文件。校验失败、模型缺失或哈希不匹配时，采集/补译会在写入前以非零状态失败；已验证的 live 模型清单和当前线上快照保持不变。单条推理或保护片段恢复失败时保留原文、记录脱敏错误并继续处理其他帖子；RAG 重建失败时保留现有稳定索引。修复网络、磁盘或模型目录问题后，重新运行相同命令即可；不要靠删除来源数据来绕过校验。失败后留下的安装临时目录可能仍保留以供审计，请先检查其内容和日志，再由管理员按明确的保留策略处理。
+
+离线可用性依赖已安装且已校验的 `data/models/translation/`，因此备份权威 Markdown/媒体时也建议备份该目录；恢复到新机器后，如未携带完整模型快照，应先重新运行 `translation install`，再执行收集或补译。
+
 ## 本地媒体与 Markdown
 
 每条推文仍以 `data/markdown/<推文ID>.md` 作为权威文档；允许下载的 X 图片保存在 `data/media/<推文ID>/`。Markdown 会显示完整正文、本地图片、引用推文和原始 X 链接，因此可以直接预览，也可以继续供 RAG 重建和检索。
@@ -188,7 +209,7 @@ Get-ScheduledTaskInfo -TaskName 'X-RAG Daily Collection'
 
 安装器将登录类型设为 `Interactive`，因此只有当该 Windows 用户已登录，且 OpenCLI 浏览器桥接可用时，收集任务才能正常运行。触发时间始终是 Windows 本地时间，不会根据 `schedule.timezone` 换算。
 
-任务会调用 WSL 内的 `scripts/run-daily.sh`。每天 10:00，它先在 WSL 运行项目自带的 `.venv/bin/xrag --root <项目根> dashboard update --no-publish`，完成四组关键词采集、静态站点构建和安全校验；成功后再把 `scripts/publish-dashboard.py` 转换为 Windows 路径，以 `python.exe -I -S <Windows 脚本路径>` 启动隔离且不加载 `site` 的发布进程，通过 Windows Git/GCM 发布 `gh-pages`。发布脚本不接受项目根目录或其他命令行参数，只从自身位置推导仓库；它固定一个已验证的 HEAD commit，核对精确的路径、文件模式和索引标志，再通过 Git 捕获 `HEAD tree blobs`，仅编译内存中已捕获的 `xrag` 发布模块字节。因此，捕获后的工作树模块替换不会改变本次执行的代码。Manual `dashboard update` still publishes by default；`--no-publish` 仅供混合计划任务把发布阶段交给 Windows 使用。
+任务会调用 WSL 内的 `scripts/run-daily.sh`。启用或运行任务前必须已执行 `xrag --root . translation install` 并保留可验证的本地模型。每天 10:00，它先在 WSL 运行项目自带的 `.venv/bin/xrag --root <项目根> dashboard update --no-publish`，完成四组关键词采集、翻译或复用译文、Markdown/RAG 写入、静态站点构建和安全校验；成功后再把 `scripts/publish-dashboard.py` 转换为 Windows 路径，以 `python.exe -I -S <Windows 脚本路径>` 启动隔离且不加载 `site` 的发布进程，通过 Windows Git/GCM 发布 `gh-pages`。运行器设置离线模型环境，只使用已安装且已校验的本地模型，不会自动下载、升级或删除翻译模型；模型验证失败时 `dashboard update --no-publish` 的非零状态会直接停止任务，发布阶段不会运行，保留当前线上快照。发布脚本不接受项目根目录或其他命令行参数，只从自身位置推导仓库；它固定一个已验证的 HEAD commit，核对精确的路径、文件模式和索引标志，再通过 Git 捕获 `HEAD tree blobs`，仅编译内存中已捕获的 `xrag` 发布模块字节。因此，捕获后的工作树模块替换不会改变本次执行的代码。Manual `dashboard update` still publishes by default；`--no-publish` 仅供混合计划任务把发布阶段交给 Windows 使用。
 
 The minimal trust boundary is the tracked scheduled launcher `scripts/run-daily.sh` and the tracked wrapper `scripts/publish-dashboard.py` selected by the Windows task. Wrapper self-checks can fail closed on accidental local changes, but cannot protect against a launcher or wrapper that was already malicious before Python started; the HEAD-blob isolation applies to the publisher modules loaded after the wrapper starts.
 

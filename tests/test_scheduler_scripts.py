@@ -824,6 +824,16 @@ def test_daily_runner_propagates_xrag_nonzero_status(tmp_path: Path) -> None:
     assert "PYTHON_RAN" not in log
 
 
+def test_daily_runner_never_downloads_or_upgrades_translation_model() -> None:
+    script = RUNNER.read_text(encoding="utf-8")
+
+    assert script.count("dashboard update --no-publish") == 1
+    assert "translation install" not in script
+    assert "snapshot_download" not in script
+    assert "HF_HUB_OFFLINE=1" in script
+    assert "TRANSFORMERS_OFFLINE=1" in script
+
+
 def test_daily_runner_exits_127_before_xrag_when_windows_python_is_absent(
     tmp_path: Path,
 ) -> None:
@@ -1218,3 +1228,11 @@ def test_readme_documents_hybrid_scheduler_runtime() -> None:
     assert "-I -S" in readme
     assert "HEAD tree blobs" in readme
     assert "minimal trust boundary" in readme
+    assert "Helsinki-NLP/opus-mt-en-zh" in readme
+    assert "xrag --root . translation install" in readme
+    assert "xrag --root . translation backfill" in readme
+    assert "data/models/translation/" in readme
+    assert "manifest.json" in readme
+    assert "SHA-256" in readme
+    assert "Hugging Face" in readme
+    assert "translation-errors" in readme
