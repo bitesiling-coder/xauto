@@ -146,6 +146,12 @@ def test_needs_english_translation_boundaries(text: str, expected: bool) -> None
     assert needs_english_translation(text) is expected
 
 
+def test_needs_english_translation_skips_vietnamese_latin_text() -> None:
+    text = "Robinhood đang thật sự kéo sóng NFT quay trở lại with enough words"
+
+    assert needs_english_translation(text) is False
+
+
 @pytest.mark.parametrize(
     "span",
     [

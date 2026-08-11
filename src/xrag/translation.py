@@ -16,6 +16,7 @@ _EXCLUDED_PATTERN = re.compile(
 )
 _LATIN_PATTERN = re.compile(r"[A-Za-z]")
 _CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_VIETNAMESE_PATTERN = re.compile(r"[\u0102\u0103\u00c2\u00e2\u0110\u0111\u00ca\u00ea\u00d4\u00f4\u01a0\u01a1\u01af\u01b0\u1ea0-\u1ef9]")
 
 _GLOSSARY = (
     "Autonomous AI Agents",
@@ -153,6 +154,8 @@ class TranslationOutcome:
 
 def needs_english_translation(text: str) -> bool:
     countable = _EXCLUDED_PATTERN.sub("", text)
+    if len(_VIETNAMESE_PATTERN.findall(countable)) >= 2:
+        return False
     latin = len(_LATIN_PATTERN.findall(countable))
     if latin < 15:
         return False
