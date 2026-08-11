@@ -7,6 +7,7 @@ const source = await readFile(sourceUrl, "utf8");
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 const {
   bannerForState,
+  displayText,
   formatMetric,
   isSafeExternalUrl,
   isStale,
@@ -147,6 +148,26 @@ test("isValidSnapshot accepts the complete public contract", () => {
   zulu.generated_at = "2026-08-10T04:00:00Z";
   zulu.posts[0].created_at = "2026-08-10T03:00:00Z";
   assert.equal(isValidSnapshot(zulu), true);
+});
+
+test("displayText prefers a nonblank Chinese translation", () => {
+  assert.equal(
+    displayText({ text: "Agent security", text_zh: "智能体安全" }),
+    "智能体安全",
+  );
+  assert.equal(displayText({ text: "Agent security" }), "Agent security");
+});
+
+test("isValidSnapshot accepts only trimmed nonblank Chinese translations", () => {
+  const translated = validSnapshot();
+  translated.posts[0].text_zh = "智能体安全";
+  assert.equal(isValidSnapshot(translated), true);
+
+  for (const text_zh of ["", "   ", " 智能体安全", "智能体安全 ", null, 42, []]) {
+    const payload = validSnapshot();
+    payload.posts[0].text_zh = text_zh;
+    assert.equal(isValidSnapshot(payload), false);
+  }
 });
 
 test("isValidSnapshot rejects malformed nested records and unsafe URLs", () => {

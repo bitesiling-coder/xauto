@@ -316,6 +316,7 @@ section + section {
 .lead-kicker,
 .topic-pill,
 .fallback-badge,
+.translation-badge,
 .keyword-chip {
   display: inline-flex;
   width: fit-content;
@@ -551,6 +552,17 @@ section + section {
   font-size: 0.68rem;
 }
 
+.translation-badge {
+  padding: 4px 8px;
+  background: var(--pastel-blue);
+  color: #365c79;
+  font-size: 0.68rem;
+}
+
+.translation-badge[hidden] {
+  display: none;
+}
+
 .post-excerpt {
   display: -webkit-box;
   overflow: hidden;
@@ -679,6 +691,18 @@ dialog::backdrop {
   white-space: pre-wrap;
 }
 
+.dialog-language-heading {
+  margin: 22px 0 8px;
+  color: var(--small-text);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.dialog-original {
+  color: var(--muted);
+}
+
 .dialog-meta,
 .dialog-keywords {
   display: flex;
@@ -716,6 +740,7 @@ dialog::backdrop {
 .post-author,
 .dialog-title,
 .dialog-copy,
+.dialog-language-heading,
 .dialog-meta span,
 .keyword-chip,
 .topic-card h3,
