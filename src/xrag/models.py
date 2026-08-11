@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 
+def canonical_source_text(value: str) -> str:
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 @dataclass(frozen=True)
 class TranslationMetadata:
     language: str

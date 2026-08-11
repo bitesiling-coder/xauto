@@ -6,7 +6,7 @@ import hashlib
 import re
 from typing import Callable, Literal, Protocol, Sequence
 
-from xrag.models import Post, QuotedPost, TranslationMetadata
+from xrag.models import Post, QuotedPost, TranslationMetadata, canonical_source_text
 
 
 _MARKER_PATTERN = re.compile(r"XRAG\d+TOKEN")
@@ -374,4 +374,4 @@ class TranslationEnricher:
 
 
 def _source_sha256(text: str) -> str:
-    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical_source_text(text).encode("utf-8")).hexdigest()

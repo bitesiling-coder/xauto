@@ -7,7 +7,8 @@ from typing import Callable, Sequence
 
 import pytest
 
-from xrag.models import Post, QuotedPost, TranslationMetadata
+from xrag.markdown_store import MarkdownStore
+from xrag.models import Post, QuotedPost, TranslationMetadata, canonical_source_text
 from xrag.translation import (
     ProtectedText,
     TranslationEnricher,
@@ -86,6 +87,35 @@ def metadata_for(
         source_sha256=digest,
         translated_at="2026-08-01T00:00:00Z",
     )
+
+
+def test_enrich_cr_newlines_produces_metadata_that_round_trips_through_markdown(
+    tmp_path,
+) -> None:
+    main_text = " Main English text has enough words\r\nfor translation and a lone\rreturn "
+    quoted_text = " Quoted English text also has enough words\rfor a real translation\r\n "
+    outcome = TranslationEnricher(FakeEngine()).enrich(
+        make_post(main_text, quoted_text), existing=None
+    )
+
+    assert outcome.post.translation_zh is not None
+    assert outcome.post.translation_zh.source_sha256 == hashlib.sha256(
+        canonical_source_text(main_text).encode("utf-8")
+    ).hexdigest()
+    assert outcome.post.quoted_post is not None
+    assert outcome.post.quoted_post.translation_zh is not None
+    assert outcome.post.quoted_post.translation_zh.source_sha256 == hashlib.sha256(
+        canonical_source_text(quoted_text).encode("utf-8")
+    ).hexdigest()
+
+    path = MarkdownStore(tmp_path).upsert(outcome.post)
+    content = path.read_bytes()
+    reread = MarkdownStore(tmp_path).read(path)
+
+    assert b"\r" not in content
+    assert reread.text == canonical_source_text(main_text)
+    assert reread.quoted_post is not None
+    assert reread.quoted_post.text == canonical_source_text(quoted_text)
 
 
 @pytest.mark.parametrize(

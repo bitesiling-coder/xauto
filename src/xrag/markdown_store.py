@@ -10,7 +10,13 @@ import tempfile
 
 import yaml
 
-from .models import LocalMedia, Post, QuotedPost, TranslationMetadata
+from .models import (
+    LocalMedia,
+    Post,
+    QuotedPost,
+    TranslationMetadata,
+    canonical_source_text,
+)
 
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
@@ -114,7 +120,7 @@ class MarkdownStore:
             quoted_post = QuotedPost(
                 id=post.quoted_post.id,
                 author=post.quoted_post.author,
-                text=post.quoted_post.text,
+                text=canonical_source_text(post.quoted_post.text),
                 created_at=post.quoted_post.created_at,
                 url=post.quoted_post.url,
                 media_urls=post.quoted_post.media_urls,
@@ -136,7 +142,7 @@ class MarkdownStore:
         normalized = Post(
             id=str(post.id),
             author=str(post.author),
-            text=str(post.text).strip(),
+            text=canonical_source_text(str(post.text)),
             created_at=str(post.created_at),
             url=str(post.url),
             bio=str(post.bio),
@@ -584,7 +590,7 @@ def _validate_translation_pair(
 ) -> str:
     if not isinstance(text_zh, str):
         raise TypeError(f"{field} text_zh must be a string")
-    normalized_text_zh = text_zh.strip("\n")
+    normalized_text_zh = canonical_source_text(text_zh)
     mapping = _translation_to_mapping(metadata)
     has_text = bool(normalized_text_zh.strip())
     if has_text != (mapping is not None):
@@ -592,7 +598,9 @@ def _validate_translation_pair(
     if mapping is not None:
         if not isinstance(source_text, str):
             raise TypeError(f"{field} source text must be a string")
-        expected = hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()
+        expected = hashlib.sha256(
+            canonical_source_text(source_text).encode("utf-8")
+        ).hexdigest()
         if mapping["source_sha256"] != expected:
             raise ValueError(f"{field}.source_sha256 does not match source text")
     return normalized_text_zh if has_text else ""

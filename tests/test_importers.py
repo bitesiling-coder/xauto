@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.importers import load_posts
 from xrag.markdown_store import MarkdownStore
-from xrag.models import LocalMedia, Post, QuotedPost, TranslationMetadata
+from xrag.models import LocalMedia, Post, QuotedPost, TranslationMetadata, canonical_source_text
 
 
 def translation_mapping(text: str, **changes: object) -> dict[str, object]:
@@ -229,6 +229,45 @@ def test_load_posts_round_trips_canonical_bilingual_markdown(tmp_path: Path) -> 
     assert post.text == text.strip()
     assert post.text_zh == original.text_zh
     assert post.translation_zh == metadata
+
+
+def test_json_import_with_cr_newlines_writes_and_reads_canonical_markdown(
+    tmp_path: Path,
+) -> None:
+    main_text = " Main English source\r\nwith a lone\rreturn "
+    quoted_text = " Quoted English source\rwith another\r\nreturn "
+    row = {
+        "id": "cr-json",
+        "text": main_text,
+        "text_zh": " 主帖译文\r\n第二行 ",
+        "translation_zh": translation_mapping(canonical_source_text(main_text)),
+        "quoted_tweet": {
+            "id": "quote",
+            "author": "quoted",
+            "text": quoted_text,
+            "created_at": "",
+            "url": "https://x.com/i/status/quote",
+            "media_urls": [],
+            "media_posters": [],
+            "text_zh": " 引用译文\r第二行 ",
+            "translation_zh": translation_mapping(canonical_source_text(quoted_text)),
+        },
+    }
+    source = tmp_path / "cr.json"
+    source.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+
+    [imported] = load_posts(source)
+    path = MarkdownStore(tmp_path).upsert(imported)
+    reread = MarkdownStore(tmp_path).read(path)
+
+    assert "\r" not in path.read_text(encoding="utf-8")
+    assert reread.text == canonical_source_text(main_text)
+    assert reread.text_zh == canonical_source_text(row["text_zh"])
+    assert reread.quoted_post is not None
+    assert reread.quoted_post.text == canonical_source_text(quoted_text)
+    assert reread.quoted_post.text_zh == canonical_source_text(
+        row["quoted_tweet"]["text_zh"]
+    )
 
 
 def test_load_posts_does_not_infer_translation_from_noncanonical_heading(
