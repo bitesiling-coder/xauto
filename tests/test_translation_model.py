@@ -1046,6 +1046,8 @@ def _install_fake_runtime(
     decoded: object = None,
     load_error: Exception | None = None,
     on_model_load: Callable[[], None] | None = None,
+    input_token_count: int = 6,
+    minimum_generation_tokens: int | None = None,
 ) -> SimpleNamespace:
     state = SimpleNamespace(
         tokenizer_loads=[],
@@ -1055,6 +1057,7 @@ def _install_fake_runtime(
         device_calls=[],
         eval_calls=0,
         decoded=[" 翻译一 ", "翻译二"] if decoded is None else decoded,
+        input_ids=SimpleNamespace(shape=(1, input_token_count)),
     )
 
     class Tokenizer:
@@ -1067,7 +1070,7 @@ def _install_fake_runtime(
 
         def __call__(self, texts: list[str], **kwargs: object) -> dict[str, object]:
             state.tokenizer_calls.append((texts, kwargs))
-            return {"input_ids": "encoded", "attention_mask": "mask"}
+            return {"input_ids": state.input_ids, "attention_mask": "mask"}
 
         def batch_decode(self, _tokens: object, **kwargs: object) -> object:
             state.decode_kwargs = kwargs
@@ -1088,6 +1091,8 @@ def _install_fake_runtime(
             state.eval_calls += 1
 
         def generate(self, **kwargs: object) -> object:
+            if minimum_generation_tokens is not None:
+                assert minimum_generation_tokens <= kwargs["max_new_tokens"] <= 256
             state.generate_calls.append(kwargs)
             return "generated"
 
@@ -1131,7 +1136,7 @@ def test_engine_loads_verified_snapshot_offline_on_cpu_and_translates_determinis
     ]
     assert state.generate_calls == [
         {
-            "input_ids": "encoded",
+            "input_ids": state.input_ids,
             "attention_mask": "mask",
             "do_sample": False,
             "num_beams": 4,
@@ -1146,11 +1151,30 @@ def test_engine_caps_generation_for_long_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_snapshot(tmp_path)
-    state = _install_fake_runtime(monkeypatch, decoded=["translation"])
+    state = _install_fake_runtime(
+        monkeypatch, decoded=["translation"], input_token_count=512
+    )
 
     TransformersTranslationEngine(tmp_path).translate_many(["word " * 200])
 
     assert state.generate_calls[0]["max_new_tokens"] == 256
+
+
+def test_engine_generation_budget_uses_tokenized_length_for_compact_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_snapshot(tmp_path)
+    state = _install_fake_runtime(
+        monkeypatch,
+        decoded=["translation"],
+        input_token_count=130,
+        minimum_generation_tokens=200,
+    )
+
+    assert TransformersTranslationEngine(tmp_path).translate_many(["x"]) == [
+        "translation"
+    ]
+    assert 130 < state.generate_calls[0]["max_new_tokens"] <= 256
 
 
 def test_engine_empty_batch_does_not_preflight_or_import_runtime(

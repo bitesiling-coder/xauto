@@ -766,9 +766,10 @@ class TransformersTranslationEngine:
                 truncation=True,
                 max_length=_MAX_INPUT_TOKENS,
             )
+            input_token_count = encoded["input_ids"].shape[-1]
             max_new_tokens = min(
                 _MAX_OUTPUT_TOKENS,
-                max(_MIN_OUTPUT_TOKENS, (max(map(len, values)) + 1) // 2),
+                max(_MIN_OUTPUT_TOKENS, input_token_count * 2),
             )
             with torch.inference_mode():
                 generated = self._model.generate(
