@@ -5,6 +5,15 @@ from typing import Literal
 
 
 @dataclass(frozen=True)
+class TranslationMetadata:
+    language: str
+    model_id: str
+    revision: str
+    source_sha256: str
+    translated_at: str
+
+
+@dataclass(frozen=True)
 class QuotedPost:
     id: str
     author: str
@@ -13,6 +22,8 @@ class QuotedPost:
     url: str
     media_urls: tuple[str, ...] = ()
     media_posters: tuple[str, ...] = ()
+    text_zh: str = ""
+    translation_zh: TranslationMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -40,12 +51,16 @@ class Post:
     local_media: tuple[LocalMedia, ...] = ()
     source_keywords: tuple[str, ...] = ()
     source_type: str = "opencli"
+    text_zh: str = ""
+    translation_zh: TranslationMetadata | None = None
 
     @property
     def searchable_text(self) -> str:
-        parts = [self.text.strip()]
-        if self.quoted_post is not None and self.quoted_post.text.strip():
-            parts.append(self.quoted_post.text.strip())
+        parts = [self.text.strip(), self.text_zh.strip()]
+        if self.quoted_post is not None:
+            parts.extend(
+                [self.quoted_post.text.strip(), self.quoted_post.text_zh.strip()]
+            )
         return "\n\n".join(part for part in parts if part)
 
 
