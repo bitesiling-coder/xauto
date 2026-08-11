@@ -51,6 +51,7 @@ _GLOSSARY_PATTERNS = tuple(
 )
 
 _RESTORE_ERROR = "protected translation spans were not preserved"
+_DEFAULT_BATCH_SIZE = 16
 
 
 class TranslationEngine(Protocol):
@@ -222,9 +223,11 @@ class TranslationEnricher:
         self,
         engine: TranslationEngine,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        batch_size: int = _DEFAULT_BATCH_SIZE,
     ) -> None:
         self._engine = engine
         self._clock = clock
+        self._batch_size = batch_size
 
     def preflight(self) -> None:
         self._engine.preflight()
@@ -369,24 +372,29 @@ class TranslationEnricher:
                 if segment.strip():
                     pending.append(_Segment(candidate.owner, index, segment))
 
-        retry_segments = pending
-        try:
-            batch = self._engine.translate_many(
-                [segment.text for segment in pending]
-            )
-        except Exception:
-            pass
-        else:
-            if isinstance(batch, list) and len(batch) == len(pending):
-                retry_segments = []
-                for value, segment in zip(batch, pending, strict=True):
-                    try:
-                        outputs[segment.owner][segment.index] = (
-                            self._validate_segment(value)
-                        )
-                        completed.add((segment.owner, segment.index))
-                    except Exception:
-                        retry_segments.append(segment)
+        retry_segments: list[_Segment] = []
+        for start in range(0, len(pending), self._batch_size):
+            segment_batch = pending[start : start + self._batch_size]
+            chunk_retries = segment_batch
+            try:
+                batch = self._engine.translate_many(
+                    [segment.text for segment in segment_batch]
+                )
+            except Exception:
+                pass
+            else:
+                if isinstance(batch, list) and len(batch) == len(segment_batch):
+                    chunk_retries = []
+                    for value, segment in zip(batch, segment_batch, strict=True):
+                        try:
+                            outputs[segment.owner][segment.index] = (
+                                self._validate_segment(value)
+                            )
+                            completed.add((segment.owner, segment.index))
+                        except Exception:
+                            chunk_retries.append(segment)
+
+            retry_segments.extend(chunk_retries)
 
         for segment in retry_segments:
             try:

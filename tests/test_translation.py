@@ -368,6 +368,38 @@ def test_enrich_rejects_unknown_marker_hallucinated_in_plain_segment() -> None:
     assert outcome.errors == (TranslationFailure("post", "translation failed"),)
 
 
+def test_enrich_chunks_alternating_protected_and_plain_segments_to_batch_size() -> None:
+    text = " ".join(f"@user{index} plain segment {index}" for index in range(5))
+    engine = FakeEngine(lambda texts, _call: [f"translated {text}" for text in texts])
+
+    outcome = TranslationEnricher(engine, batch_size=2).enrich(
+        make_post(text), existing=None
+    )
+
+    assert [len(call) for call in engine.calls] == [2, 2, 1]
+    assert all(len(call) <= 2 for call in engine.calls)
+    assert outcome.translated == 1
+    assert outcome.errors == ()
+
+
+def test_enrich_retries_only_failed_segment_chunk_after_later_chunks_succeed() -> None:
+    text = " ".join(f"@user{index} plain segment {index}" for index in range(6))
+
+    def respond(texts: list[str], call: int) -> object:
+        if call == 1:
+            return RuntimeError("chunk unavailable")
+        return [f"translated {text}" for text in texts]
+
+    engine = FakeEngine(respond)
+    outcome = TranslationEnricher(engine, batch_size=3).enrich(
+        make_post(text), existing=None
+    )
+
+    assert [len(call) for call in engine.calls] == [3, 3, 1, 1, 1]
+    assert outcome.translated == 1
+    assert outcome.errors == ()
+
+
 def test_more_than_ten_thousand_spans_protect_restore_and_enrich() -> None:
     text = "``" * 10_001 + " abcdefghijklmno"
     engine = FakeEngine(lambda texts, _call: [f"translated {item}" for item in texts])
