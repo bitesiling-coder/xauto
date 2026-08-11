@@ -2,13 +2,23 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from xrag.models import Post, QuotedPost, TranslationMetadata, canonical_source_text
+from xrag.models import (
+    Post,
+    QuotedPost,
+    TranslationMetadata,
+    canonical_source_text,
+    canonical_translation_text,
+)
 
 
 def test_canonical_source_text_normalizes_all_carriage_return_forms_before_strip() -> None:
     assert canonical_source_text(" \r\nfirst\rsecond\nthird\r\n ") == (
         "first\nsecond\nthird"
     )
+
+
+def test_canonical_translation_text_preserves_non_newline_outer_whitespace() -> None:
+    assert canonical_translation_text("\n  首行\r\n第二行  \r") == "  首行\n第二行  "
 
 
 def test_searchable_text_includes_one_quoted_post_without_markdown_decoration() -> None:

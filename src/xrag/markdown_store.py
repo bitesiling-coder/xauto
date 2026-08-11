@@ -16,6 +16,7 @@ from .models import (
     QuotedPost,
     TranslationMetadata,
     canonical_source_text,
+    canonical_translation_text,
 )
 
 
@@ -590,7 +591,7 @@ def _validate_translation_pair(
 ) -> str:
     if not isinstance(text_zh, str):
         raise TypeError(f"{field} text_zh must be a string")
-    normalized_text_zh = canonical_source_text(text_zh)
+    normalized_text_zh = canonical_translation_text(text_zh)
     mapping = _translation_to_mapping(metadata)
     has_text = bool(normalized_text_zh.strip())
     if has_text != (mapping is not None):

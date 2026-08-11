@@ -13,7 +13,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.importers import load_posts
 from xrag.markdown_store import MarkdownStore
-from xrag.models import LocalMedia, Post, QuotedPost, TranslationMetadata, canonical_source_text
+from xrag.models import (
+    LocalMedia,
+    Post,
+    QuotedPost,
+    TranslationMetadata,
+    canonical_source_text,
+    canonical_translation_text,
+)
 
 
 def translation_mapping(text: str, **changes: object) -> dict[str, object]:
@@ -262,12 +269,69 @@ def test_json_import_with_cr_newlines_writes_and_reads_canonical_markdown(
 
     assert "\r" not in path.read_text(encoding="utf-8")
     assert reread.text == canonical_source_text(main_text)
-    assert reread.text_zh == canonical_source_text(row["text_zh"])
+    assert reread.text_zh == canonical_translation_text(row["text_zh"])
     assert reread.quoted_post is not None
     assert reread.quoted_post.text == canonical_source_text(quoted_text)
-    assert reread.quoted_post.text_zh == canonical_source_text(
+    assert reread.quoted_post.text_zh == canonical_translation_text(
         row["quoted_tweet"]["text_zh"]
     )
+
+
+@pytest.mark.parametrize("suffix", [".json", ".yaml"])
+def test_import_preserves_main_and_quoted_translation_whitespace(
+    tmp_path: Path, suffix: str
+) -> None:
+    main_text = "main source"
+    quoted_text = "quoted source"
+    row = {
+        "id": "translation-whitespace",
+        "text": main_text,
+        "text_zh": "  首行\r\n第二行  \n",
+        "translation_zh": translation_mapping(main_text),
+        "quoted_tweet": {
+            "id": "quote",
+            "author": "quoted",
+            "text": quoted_text,
+            "created_at": "",
+            "url": "https://x.com/i/status/quote",
+            "media_urls": [],
+            "media_posters": [],
+            "text_zh": "  引用首行\r第二行  \n",
+            "translation_zh": translation_mapping(quoted_text),
+        },
+    }
+    source = tmp_path / f"translation{suffix}"
+    if suffix == ".json":
+        source.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+    else:
+        source.write_text(yaml.safe_dump(row, allow_unicode=True), encoding="utf-8")
+
+    [imported] = load_posts(source)
+    path = MarkdownStore(tmp_path).upsert(imported)
+    reread = MarkdownStore(tmp_path).read(path)
+
+    assert reread.text_zh == "  首行\n第二行  "
+    assert reread.quoted_post is not None
+    assert reread.quoted_post.text_zh == "  引用首行\n第二行  "
+
+
+def test_import_rejects_whitespace_only_translation_after_newline_normalization(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "blank-translation.json"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "blank-translation",
+                "text": "source",
+                "text_zh": " \r\n \r",
+                "translation_zh": translation_mapping("source"),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert_invalid_import(path)
 
 
 def test_load_posts_does_not_infer_translation_from_noncanonical_heading(

@@ -149,6 +149,34 @@ def test_upsert_round_trips_main_translation_and_renders_before_media(tmp_path: 
     )
 
 
+def test_upsert_preserves_main_and_quoted_translation_whitespace(tmp_path: Path) -> None:
+    text_zh = "  首行\r\n第二行  \n"
+    quoted_text_zh = "  引用首行\r第二行  \n"
+    main_text = "main source"
+    quoted_text = "quoted source"
+    post = make_post(
+        text=main_text,
+        text_zh=text_zh,
+        translation_zh=translation_for(main_text),
+        quoted_post=QuotedPost(
+            "456",
+            "quoted",
+            quoted_text,
+            "",
+            "https://x.com/i/status/456",
+            text_zh=quoted_text_zh,
+            translation_zh=translation_for(quoted_text),
+        ),
+    )
+
+    path = MarkdownStore(tmp_path).upsert(post)
+    reread = MarkdownStore(tmp_path).read(path)
+
+    assert reread.text_zh == "  首行\n第二行  "
+    assert reread.quoted_post is not None
+    assert reread.quoted_post.text_zh == "  引用首行\n第二行  "
+
+
 def test_upsert_round_trips_quoted_translation_and_renders_readable_blockquote(
     tmp_path: Path,
 ) -> None:

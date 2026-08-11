@@ -8,6 +8,10 @@ def canonical_source_text(value: str) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def canonical_translation_text(value: str) -> str:
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+
+
 @dataclass(frozen=True)
 class TranslationMetadata:
     language: str
