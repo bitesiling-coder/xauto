@@ -672,14 +672,30 @@ def run_wsl_with_minimal_environment(
     )
 
 
-def require_windows_python_wsl_interop(windows_python_dir: str) -> None:
-    probe = run_wsl_with_minimal_environment(
-        f"PATH={windows_python_dir}:/usr/bin:/bin",
+def require_windows_python_wsl_interop(
+    wsl_home: str,
+    windows_python_dir: str,
+) -> None:
+    search_path = f"{wsl_home}/.local/bin:{windows_python_dir}:/usr/bin:/bin"
+    command = (
         "python.exe",
         "-S",
         "-c",
-        "import sys; raise SystemExit(sys.platform != 'win32')",
+        "import sys; raise SystemExit(not (sys.platform == 'win32' and "
+        "sys.version_info >= (3, 11)))",
     )
+    if os.name == "nt":
+        probe = run_wsl_with_minimal_environment(
+            f"HOME={wsl_home}",
+            f"PATH={search_path}",
+            *command,
+        )
+    else:
+        probe = subprocess.run(
+            ["env", "-i", f"HOME={wsl_home}", f"PATH={search_path}", *command],
+            capture_output=True,
+            check=False,
+        )
     if probe.returncode != 0:
         pytest.skip("Windows Python is unavailable through WSL interop")
 
@@ -744,6 +760,7 @@ def prepare_wsl_runner(
         fake_python.chmod(0o755)
 
     windows_python = ""
+    wsl_home = translate_with_wsl(fake_home)
     if with_python and not fake_linux_python:
         if os.name == "nt":
             windows_python = translate_with_wsl(Path(sys.executable))
@@ -752,15 +769,15 @@ def prepare_wsl_runner(
             if discovered is None:
                 pytest.skip("Windows Python is unavailable through WSL interop")
             windows_python = str(Path(discovered).resolve())
-        if os.name == "nt":
-            require_windows_python_wsl_interop(
-                str(PurePosixPath(windows_python).parent)
-            )
+        require_windows_python_wsl_interop(
+            wsl_home,
+            str(PurePosixPath(windows_python).parent),
+        )
 
     return (
         project,
         translate_with_wsl(scripts / "run-daily.sh"),
-        translate_with_wsl(fake_home),
+        wsl_home,
         str(PurePosixPath(windows_python).parent) if windows_python else "",
     )
 
