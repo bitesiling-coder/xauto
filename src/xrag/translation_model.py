@@ -21,7 +21,6 @@ _REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 _HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 _STAGING_PATTERN = re.compile(r"\.install-[0-9a-f]{32}")
 _TEMP_MANIFEST_PATTERN = re.compile(r"\.manifest-[0-9a-f]{32}\.tmp")
-_RETAINED_PATTERN = re.compile(r"\.retained-[0-9a-f]{32}")
 _MANIFEST_KEYS = {"version", "model_id", "revision", "snapshot", "files"}
 
 
@@ -512,9 +511,10 @@ def _cleanup_owned_staging(
             or not os.path.lexists(staging)
         ):
             return False
-        return _retain_owned(
-            root, staging, expected_identity, _require_directory
-        ) is not None
+        return (
+            _ownership_identity(_require_directory(staging))
+            == expected_identity
+        )
     except Exception:
         return False
 
@@ -531,55 +531,12 @@ def _cleanup_owned_manifest(
             or not os.path.lexists(path)
         ):
             return False
-        retained = _retain_owned(
-            root, path, expected_identity, _require_regular_file
+        return (
+            _ownership_identity(_require_regular_file(path))
+            == expected_identity
         )
-        return retained is not None
     except Exception:
         return False
-
-
-def _new_retained(parent: Path) -> Path:
-    for _attempt in range(16):
-        candidate = parent / f".retained-{uuid.uuid4().hex}"
-        if (
-            candidate.parent == parent
-            and _RETAINED_PATTERN.fullmatch(candidate.name) is not None
-            and not os.path.lexists(candidate)
-        ):
-            return candidate
-    raise ValueError("could not allocate retained path")
-
-
-def _retain_owned(
-    parent: Path,
-    path: Path,
-    expected_identity: tuple[int, int],
-    require: Callable[[Path], os.stat_result],
-) -> Path | None:
-    if path.parent != parent or not os.path.lexists(path):
-        return None
-    retained = _new_retained(parent)
-    try:
-        os.replace(path, retained)
-    except Exception:
-        try:
-            moved = require(retained)
-            if (
-                _ownership_identity(moved) == expected_identity
-                and not os.path.lexists(path)
-            ):
-                return retained
-        except Exception:
-            pass
-        raise
-    try:
-        moved = require(retained)
-        if _ownership_identity(moved) == expected_identity:
-            return retained
-    except Exception:
-        pass
-    return None
 
 
 def _capture_manifest(
@@ -602,13 +559,8 @@ def _rollback_manifest(
     try:
         if published_identity is None:
             return
-        published_retained = _retain_owned(
-            root,
-            manifest_path,
-            published_identity,
-            _require_regular_file,
-        )
-        if published_retained is None:
+        published = _require_regular_file(manifest_path)
+        if _ownership_identity(published) != published_identity:
             return
         if previous_manifest is not None:
             for _attempt in range(16):
@@ -634,7 +586,8 @@ def _rollback_manifest(
                 break
             if rollback_path is None:
                 return
-            if os.path.lexists(manifest_path):
+            current = _require_regular_file(manifest_path)
+            if _ownership_identity(current) != published_identity:
                 return
             os.replace(rollback_path, manifest_path)
             rollback_path = None

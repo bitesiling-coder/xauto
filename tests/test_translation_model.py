@@ -428,10 +428,9 @@ def test_install_download_failure_preserves_current_manifest_and_sentinels(
     assert "SECRET" not in str(caught.value)
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert (sentinel / "keep").read_text(encoding="utf-8") == "keep"
-    assert not [path for path in tmp_path.glob(".install-*") if path != sentinel]
-    retained = list(tmp_path.glob(".retained-*"))
-    assert len(retained) == 1
-    assert (retained[0] / "partial.bin").read_bytes() == b"partial"
+    preserved = [path for path in tmp_path.glob(".install-*") if path != sentinel]
+    assert len(preserved) == 1
+    assert (preserved[0] / "partial.bin").read_bytes() == b"partial"
 
 
 def test_install_manifest_fsync_failure_cleans_only_own_temp_and_preserves_current(
@@ -441,10 +440,19 @@ def test_install_manifest_fsync_failure_cleans_only_own_temp_and_preserves_curre
 
     _write_snapshot(tmp_path, REVISION_A)
     manifest_before = (tmp_path / "manifest.json").read_bytes()
+    real_fsync = module.os.fsync
+
+    def fail_file_fsync(descriptor: int) -> None:
+        opened = module._ownership_identity(os.fstat(descriptor))
+        for candidate in tmp_path.glob(".manifest-*.tmp"):
+            if module._ownership_identity(candidate.stat()) == opened:
+                raise OSError("SECRET fsync failure")
+        real_fsync(descriptor)
+
     monkeypatch.setattr(
         module.os,
         "fsync",
-        lambda _descriptor: (_ for _ in ()).throw(OSError("SECRET fsync failure")),
+        fail_file_fsync,
     )
 
     with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
@@ -455,7 +463,9 @@ def test_install_manifest_fsync_failure_cleans_only_own_temp_and_preserves_curre
         )
 
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
-    assert not list(tmp_path.glob(".manifest-*.tmp"))
+    preserved = list(tmp_path.glob(".manifest-*.tmp"))
+    assert len(preserved) == 1
+    assert b'"revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' in preserved[0].read_bytes()
 
 
 def test_install_post_publish_failure_rolls_back_current_manifest(
@@ -484,7 +494,6 @@ def test_install_post_publish_failure_rolls_back_current_manifest(
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert verify_translation_model(tmp_path).revision == REVISION_A
     assert not list(tmp_path.glob(".manifest-*.tmp"))
-    assert len(list(tmp_path.glob(".retained-*"))) == 1
 
 
 def test_install_rolls_back_when_manifest_replace_succeeds_then_raises(
@@ -516,52 +525,6 @@ def test_install_rolls_back_when_manifest_replace_succeeds_then_raises(
     assert injected is True
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert verify_translation_model(tmp_path).revision == REVISION_A
-    assert len(list(tmp_path.glob(".retained-*"))) == 1
-
-
-def test_install_rollback_recovers_when_retained_replace_succeeds_then_raises(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import xrag.translation_model as module
-
-    _write_snapshot(tmp_path, REVISION_A)
-    manifest_before = (tmp_path / "manifest.json").read_bytes()
-    real_replace = module.os.replace
-    real_fsync_directory = module._fsync_directory
-    injected = False
-
-    def ambiguous_retention(source: object, destination: object) -> None:
-        nonlocal injected
-        real_replace(source, destination)
-        if (
-            Path(source).name == "manifest.json"
-            and Path(destination).name.startswith(".retained-")
-            and not injected
-        ):
-            injected = True
-            raise OSError("SECRET rollback rename ambiguity")
-
-    def fail_root_fsync(path: Path) -> None:
-        if Path(path) == tmp_path.resolve():
-            raise OSError("SECRET post-publish failure")
-        real_fsync_directory(path)
-
-    monkeypatch.setattr(module.os, "replace", ambiguous_retention)
-    monkeypatch.setattr(module, "_fsync_directory", fail_root_fsync)
-
-    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
-        install_translation_model(
-            tmp_path,
-            api=FakeApi(REVISION_B),
-            downloader=_downloader_for({"config.json": b"new"}),
-        )
-
-    assert injected is True
-    assert (tmp_path / "manifest.json").read_bytes() == manifest_before
-    assert verify_translation_model(tmp_path).revision == REVISION_A
-    retained = list(tmp_path.glob(".retained-*"))
-    assert len(retained) == 1
-    assert retained[0].is_file()
 
 
 @pytest.mark.parametrize("mutation", ["identity", "content"])
@@ -659,9 +622,9 @@ def test_install_reuses_only_exact_existing_target(tmp_path: Path, same: bool) -
             downloader=_downloader_for({"config.json": b"same"}),
         )
         assert installed.files == (("config.json", _sha(b"same")),)
-        retained = list(tmp_path.glob(".retained-*"))
-        assert len(retained) == 1
-        assert (retained[0] / "config.json").read_bytes() == b"same"
+        preserved = list(tmp_path.glob(".install-*"))
+        assert len(preserved) == 1
+        assert (preserved[0] / "config.json").read_bytes() == b"same"
     else:
         with pytest.raises(
             RuntimeError, match="^local translation model unavailable$"
@@ -673,9 +636,9 @@ def test_install_reuses_only_exact_existing_target(tmp_path: Path, same: bool) -
             )
         assert not (tmp_path / "manifest.json").exists()
         assert (tmp_path / "snapshots" / REVISION_A / "config.json").read_bytes() == b"different"
-        retained = list(tmp_path.glob(".retained-*"))
-        assert len(retained) == 1
-        assert (retained[0] / "config.json").read_bytes() == b"same"
+        preserved = list(tmp_path.glob(".install-*"))
+        assert len(preserved) == 1
+        assert (preserved[0] / "config.json").read_bytes() == b"same"
 
 
 def test_install_includes_safe_download_cache_in_verified_snapshot(tmp_path: Path) -> None:
@@ -718,10 +681,10 @@ def test_install_rejects_unsafe_download_cache_and_retains_staging(
             tmp_path, api=FakeApi(REVISION_A), downloader=downloader
         )
 
-    retained = list(tmp_path.glob(".retained-*"))
-    assert len(retained) == 1
-    assert retained[0].is_dir()
-    assert (retained[0] / ".cache" / "unsafe-link").is_symlink()
+    preserved = list(tmp_path.glob(".install-*"))
+    assert len(preserved) == 1
+    assert preserved[0].is_dir()
+    assert (preserved[0] / ".cache" / "unsafe-link").is_symlink()
     assert outside.read_text(encoding="utf-8") == "PRIVATE-KEEP"
 
 
@@ -752,7 +715,7 @@ def test_install_rejects_symlink_root(tmp_path: Path) -> None:
 
 
 def test_staging_cleanup_never_deletes_swapped_unowned_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     import xrag.translation_model as module
 
@@ -765,25 +728,12 @@ def test_staging_cleanup_never_deletes_swapped_unowned_directory(
     sentinel = unowned / "PRIVATE-KEEP"
     sentinel.write_text("keep", encoding="utf-8")
     parked = tmp_path / "parked-owned-staging"
-    real_replace = module.os.replace
-    swapped = False
-
-    def swapping_replace(source: object, destination: object) -> None:
-        nonlocal swapped
-        if Path(source) == staging and not swapped:
-            swapped = True
-            real_replace(staging, parked)
-            real_replace(unowned, staging)
-        real_replace(source, destination)
-
-    monkeypatch.setattr(module.os, "replace", swapping_replace)
+    os.replace(staging, parked)
+    os.replace(unowned, staging)
 
     assert module._cleanup_owned_staging(tmp_path, staging, identity) is False
 
-    assert swapped is True
-    retained = list(tmp_path.glob(".retained-*"))
-    assert len(retained) == 1
-    assert (retained[0] / sentinel.name).read_text(encoding="utf-8") == "keep"
+    assert (staging / sentinel.name).read_text(encoding="utf-8") == "keep"
     assert (parked / "owned").read_text(encoding="utf-8") == "owned"
 
 
@@ -808,7 +758,7 @@ def test_safe_download_cache_validation_does_not_move_or_delete_entries(
 
 
 def test_temp_manifest_cleanup_never_deletes_swapped_unowned_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     import xrag.translation_model as module
 
@@ -818,30 +768,17 @@ def test_temp_manifest_cleanup_never_deletes_swapped_unowned_file(
     unowned = tmp_path / "unowned-manifest-sentinel"
     unowned.write_text("PRIVATE-KEEP", encoding="utf-8")
     parked = tmp_path / "parked-owned-manifest"
-    real_replace = module.os.replace
-    swapped = False
-
-    def swapping_replace(source: object, destination: object) -> None:
-        nonlocal swapped
-        if Path(source) == temporary and not swapped:
-            swapped = True
-            real_replace(temporary, parked)
-            real_replace(unowned, temporary)
-        real_replace(source, destination)
-
-    monkeypatch.setattr(module.os, "replace", swapping_replace)
+    os.replace(temporary, parked)
+    os.replace(unowned, temporary)
 
     assert module._cleanup_owned_manifest(tmp_path, temporary, identity) is False
 
-    assert swapped is True
-    retained = list(tmp_path.glob(".retained-*"))
-    assert len(retained) == 1
-    assert retained[0].read_text(encoding="utf-8") == "PRIVATE-KEEP"
+    assert temporary.read_text(encoding="utf-8") == "PRIVATE-KEEP"
     assert parked.read_text(encoding="utf-8") == "owned"
 
 
 @pytest.mark.parametrize("entry_kind", ["file", "directory"])
-def test_cleanup_retains_entire_owned_tree_without_scanning_other_retained(
+def test_cleanup_preserves_owned_tree_in_place_without_scanning_other_temps(
     tmp_path: Path, entry_kind: str
 ) -> None:
     import xrag.translation_model as module
@@ -861,15 +798,30 @@ def test_cleanup_retains_entire_owned_tree_without_scanning_other_retained(
 
     assert module._cleanup_owned_staging(tmp_path, staging, identity) is True
 
-    retained = [path for path in tmp_path.glob(".retained-*") if path != unrelated]
-    assert len(retained) == 1
     if entry_kind == "file":
-        assert (retained[0] / "owned").read_text(encoding="utf-8") == "owned"
+        assert (staging / "owned").read_text(encoding="utf-8") == "owned"
     else:
-        assert (retained[0] / "owned" / "payload").read_text(
+        assert (staging / "owned" / "payload").read_text(
             encoding="utf-8"
         ) == "owned"
     assert (unrelated / "PRIVATE-KEEP").read_text(encoding="utf-8") == "keep"
+
+
+def test_cleanup_never_overwrites_unrelated_retained_sentinel(
+    tmp_path: Path,
+) -> None:
+    import xrag.translation_model as module
+
+    temporary = tmp_path / f".manifest-{'8' * 32}.tmp"
+    temporary.write_text("owned", encoding="utf-8")
+    identity = module._ownership_identity(module._require_regular_file(temporary))
+    claimed = tmp_path / f".retained-{'8' * 32}"
+    claimed.write_text("PRIVATE-KEEP", encoding="utf-8")
+
+    assert module._cleanup_owned_manifest(tmp_path, temporary, identity) is True
+
+    assert claimed.read_text(encoding="utf-8") == "PRIVATE-KEEP"
+    assert temporary.read_text(encoding="utf-8") == "owned"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX final-name swap probe")
