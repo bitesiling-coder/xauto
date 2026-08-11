@@ -404,9 +404,13 @@ def test_daily_runner_uses_fail_fast_dashboard_update_pipeline() -> None:
     assert '"$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update --no-publish' in script
     assert "command -v python.exe" in script
     assert "command -v wslpath" in script
-    assert 'wslpath -w "$PROJECT_ROOT"' in script
+    assert "sys.platform" in script
+    assert "sys.version_info" in script
+    assert "readlink -f" in script
+    assert "MZ" in script
     assert 'wslpath -w "$PROJECT_ROOT/scripts/publish-dashboard.py"' in script
-    assert 'exec python.exe "$WINDOWS_WRAPPER" --root "$WINDOWS_ROOT"' in script
+    assert 'exec "$WINDOWS_PYTHON" -S "$WINDOWS_WRAPPER"' in script
+    assert "--root" not in script.split("dashboard update --no-publish", 1)[1]
     assert 'collect --all' not in script
 
 
@@ -650,7 +654,8 @@ def prepare_wsl_runner(
     *,
     with_opencli: bool,
     with_python: bool = True,
-) -> tuple[Path, str, str]:
+    fake_linux_python: bool = False,
+) -> tuple[Path, str, str, str]:
     if os.name == "nt" and shutil.which("wsl.exe") is None:
         pytest.skip("WSL is not installed")
 
@@ -663,7 +668,15 @@ def prepare_wsl_runner(
     fake_bin.mkdir(parents=True)
     local_bin.mkdir(parents=True)
     (scripts / "run-daily.sh").write_bytes(RUNNER.read_bytes())
-    (scripts / "publish-dashboard.py").write_bytes(PUBLISH_WRAPPER.read_bytes())
+    (scripts / "publish-dashboard.py").write_text(
+        "import os, sys\n"
+        "for value in sys.argv:\n"
+        "    print(f'PYTHON_ARG=<{value}>')\n"
+        "print('PYTHON_RAN')\n"
+        "raise SystemExit(int(os.environ.get('FAKE_PYTHON_STATUS', '0')))\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     fake_xrag = fake_bin / "xrag"
     fake_xrag.write_text(
         "#!/usr/bin/env bash\n"
@@ -685,30 +698,48 @@ def prepare_wsl_runner(
             newline="\n",
         )
         fake_opencli.chmod(0o755)
-    if with_python:
+    if fake_linux_python:
         fake_python = local_bin / "python.exe"
         fake_python.write_text(
             "#!/usr/bin/env bash\n"
-            "printf 'PYTHON_ARG=<%s>\\n' \"$@\"\n"
-            "printf 'PYTHON_RAN\\n'\n"
-            "exit \"${FAKE_PYTHON_STATUS:-0}\"\n",
+            "printf 'win32\\n3\\n14\\n'\n",
             encoding="utf-8",
             newline="\n",
         )
         fake_python.chmod(0o755)
 
-    return project, translate_with_wsl(scripts / "run-daily.sh"), translate_with_wsl(fake_home)
+    windows_python = ""
+    if with_python and not fake_linux_python:
+        if os.name == "nt":
+            windows_python = translate_with_wsl(Path(sys.executable))
+        else:
+            discovered = shutil.which("python.exe")
+            if discovered is None:
+                pytest.skip("Windows Python is unavailable through WSL interop")
+            windows_python = str(Path(discovered).resolve())
+
+    return (
+        project,
+        translate_with_wsl(scripts / "run-daily.sh"),
+        translate_with_wsl(fake_home),
+        str(PurePosixPath(windows_python).parent) if windows_python else "",
+    )
 
 
 def run_daily_in_minimal_environment(
     wsl_runner: str,
     wsl_home: str,
+    windows_python_dir: str,
     status: int = 0,
     python_status: int = 0,
 ) -> subprocess.CompletedProcess[bytes]:
+    search_path = f"{wsl_home}/.local/bin"
+    if windows_python_dir:
+        search_path += f":{windows_python_dir}"
+    search_path += ":/usr/bin:/bin"
     if os.name != "nt":
         return subprocess.run(
-            ["env", "-i", f"HOME={wsl_home}", "PATH=/usr/bin:/bin", f"FAKE_STATUS={status}", f"FAKE_PYTHON_STATUS={python_status}", "bash", wsl_runner],
+            ["env", "-i", f"HOME={wsl_home}", f"PATH={search_path}", f"FAKE_STATUS={status}", f"FAKE_PYTHON_STATUS={python_status}", "WSLENV=FAKE_PYTHON_STATUS", "bash", wsl_runner],
             capture_output=True,
             check=False,
         )
@@ -722,9 +753,10 @@ def run_daily_in_minimal_environment(
             "env",
             "-i",
             f"HOME={wsl_home}",
-            "PATH=/usr/bin:/bin",
+            f"PATH={search_path}",
             f"FAKE_STATUS={status}",
             f"FAKE_PYTHON_STATUS={python_status}",
+            "WSLENV=FAKE_PYTHON_STATUS",
             "bash",
             wsl_runner,
         ],
@@ -733,10 +765,13 @@ def run_daily_in_minimal_environment(
     )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive-path orchestration")
 def test_daily_runner_finds_opencli_and_sets_offline_environment(tmp_path: Path) -> None:
-    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=True)
+    project, wsl_runner, wsl_home, python_dir = prepare_wsl_runner(
+        tmp_path, with_opencli=True
+    )
 
-    result = run_daily_in_minimal_environment(wsl_runner, wsl_home)
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home, python_dir)
 
     assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
     log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
@@ -754,15 +789,16 @@ def test_daily_runner_finds_opencli_and_sets_offline_environment(tmp_path: Path)
     assert "TRANSFORMERS_OFFLINE=<1>" in log
     python_args = [line for line in log.splitlines() if line.startswith("PYTHON_ARG=")]
     assert python_args[0].endswith("publish-dashboard.py>")
-    assert python_args[1] == "PYTHON_ARG=<--root>"
-    assert python_args[2].endswith("project with spaces>")
+    assert len(python_args) == 1
     assert "PYTHON_RAN" in log
 
 
 def test_daily_runner_exits_127_before_xrag_when_opencli_is_absent(tmp_path: Path) -> None:
-    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=False)
+    project, wsl_runner, wsl_home, python_dir = prepare_wsl_runner(
+        tmp_path, with_opencli=False
+    )
 
-    result = run_daily_in_minimal_environment(wsl_runner, wsl_home)
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home, python_dir)
 
     assert result.returncode == 127, result.stderr.decode("utf-8", errors="replace")
     log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
@@ -773,9 +809,13 @@ def test_daily_runner_exits_127_before_xrag_when_opencli_is_absent(tmp_path: Pat
 
 
 def test_daily_runner_propagates_xrag_nonzero_status(tmp_path: Path) -> None:
-    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=True)
+    project, wsl_runner, wsl_home, python_dir = prepare_wsl_runner(
+        tmp_path, with_opencli=True
+    )
 
-    result = run_daily_in_minimal_environment(wsl_runner, wsl_home, status=23)
+    result = run_daily_in_minimal_environment(
+        wsl_runner, wsl_home, python_dir, status=23
+    )
 
     assert result.returncode == 23, result.stderr.decode("utf-8", errors="replace")
     log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
@@ -786,11 +826,11 @@ def test_daily_runner_propagates_xrag_nonzero_status(tmp_path: Path) -> None:
 def test_daily_runner_exits_127_before_xrag_when_windows_python_is_absent(
     tmp_path: Path,
 ) -> None:
-    project, wsl_runner, wsl_home = prepare_wsl_runner(
+    project, wsl_runner, wsl_home, python_dir = prepare_wsl_runner(
         tmp_path, with_opencli=True, with_python=False
     )
 
-    result = run_daily_in_minimal_environment(wsl_runner, wsl_home)
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home, python_dir)
 
     assert result.returncode == 127
     log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
@@ -799,11 +839,14 @@ def test_daily_runner_exits_127_before_xrag_when_windows_python_is_absent(
     assert "PYTHON_RAN" not in log
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive-path orchestration")
 def test_daily_runner_propagates_native_publisher_status(tmp_path: Path) -> None:
-    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=True)
+    project, wsl_runner, wsl_home, python_dir = prepare_wsl_runner(
+        tmp_path, with_opencli=True
+    )
 
     result = run_daily_in_minimal_environment(
-        wsl_runner, wsl_home, python_status=29
+        wsl_runner, wsl_home, python_dir, python_status=29
     )
 
     assert result.returncode == 29
@@ -812,29 +855,79 @@ def test_daily_runner_propagates_native_publisher_status(tmp_path: Path) -> None
     assert "PYTHON_RAN" in log
 
 
-def test_publish_wrapper_calls_publisher_with_exact_resolved_paths(
+def test_daily_runner_rejects_spoofed_linux_python_before_xrag(
     tmp_path: Path,
 ) -> None:
-    root = tmp_path / "project with spaces"
+    project, wsl_runner, wsl_home, python_dir = prepare_wsl_runner(
+        tmp_path,
+        with_opencli=True,
+        with_python=False,
+        fake_linux_python=True,
+    )
+
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home, python_dir)
+
+    assert result.returncode == 127
+    log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
+    assert "Windows python.exe" in log
+    assert "XRAG_RAN" not in log
+    assert "PYTHON_RAN" not in log
+
+
+def _assert_generic_wrapper_failure(
+    result: subprocess.CompletedProcess[str], *forbidden: str
+) -> None:
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert result.stderr == "Error: dashboard publication failed\n"
+    assert "Traceback" not in result.stdout + result.stderr
+    for value in forbidden:
+        assert value not in result.stdout + result.stderr
+
+
+def test_publish_wrapper_rejects_extra_arguments_without_echoing_them() -> None:
+    secret = "auth_token=wrapper-extra-secret"
+
+    result = subprocess.run(
+        [sys.executable, "-S", str(PUBLISH_WRAPPER), secret],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    _assert_generic_wrapper_failure(result, secret, str(PROJECT_ROOT))
+
+
+def test_publish_wrapper_never_adds_project_code_to_sys_path() -> None:
+    source = PUBLISH_WRAPPER.read_text(encoding="utf-8")
+
+    assert "sys.path.insert" not in source
+    assert "sys.path.append" not in source
+
+
+def test_copied_wrapper_rejects_fake_module_before_import_without_git(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "untrusted-copy"
+    wrapper = root / "scripts" / PUBLISH_WRAPPER.name
     package = root / "src" / "xrag"
     package.mkdir(parents=True)
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_bytes(PUBLISH_WRAPPER.read_bytes())
+    marker = tmp_path / "fake-module-executed"
     (package / "__init__.py").write_text("", encoding="utf-8")
-    record = tmp_path / "record.json"
     (package / "dashboard_publish.py").write_text(
-        "import json, os\n"
+        "import os\n"
         "from pathlib import Path\n"
-        "class PagesPublisher:\n"
-        "    def __init__(self, root, worktree):\n"
-        "        self.root, self.worktree = root, worktree\n"
-        "    def publish(self, site):\n"
-        "        Path(os.environ['PUBLISH_RECORD']).write_text(json.dumps([str(self.root), str(self.worktree), str(site)]), encoding='utf-8')\n"
-        "        return {'changed': True, 'branch': 'gh-pages'}\n",
+        "Path(os.environ['FAKE_MARKER']).write_text('executed', encoding='utf-8')\n",
         encoding="utf-8",
     )
 
     result = subprocess.run(
-        [sys.executable, str(PUBLISH_WRAPPER), "--root", str(root / ".")],
-        env={**os.environ, "PUBLISH_RECORD": str(record)},
+        [sys.executable, "-S", str(wrapper)],
+        env={**os.environ, "FAKE_MARKER": str(marker)},
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -842,22 +935,99 @@ def test_publish_wrapper_calls_publisher_with_exact_resolved_paths(
         check=False,
     )
 
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {"changed": True, "branch": "gh-pages"}
-    assert json.loads(record.read_text(encoding="utf-8")) == [
-        str(root.resolve()),
-        str(root.resolve() / ".worktrees" / "x-rag-pages"),
-        str(root.resolve() / "data" / "dashboard-site"),
-    ]
+    _assert_generic_wrapper_failure(result, str(root), str(marker))
+    assert not marker.exists()
 
 
-def test_publish_wrapper_rejects_missing_root_without_traceback_or_secret(
+def create_trusted_publisher_repo(
+    tmp_path: Path,
+    *,
+    publisher_source: str | None = None,
+) -> tuple[Path, Path]:
+    root = tmp_path / "trusted Windows project"
+    remote = tmp_path / "origin.git"
+    scripts = root / "scripts"
+    package = root / "src" / "xrag"
+    scripts.mkdir(parents=True)
+    package.mkdir(parents=True)
+    remote.mkdir()
+    shutil.copy2(PUBLISH_WRAPPER, scripts / PUBLISH_WRAPPER.name)
+    shutil.copy2(PROJECT_ROOT / "src" / "xrag" / "__init__.py", package / "__init__.py")
+    if publisher_source is None:
+        shutil.copy2(
+            PROJECT_ROOT / "src" / "xrag" / "dashboard_publish.py",
+            package / "dashboard_publish.py",
+        )
+    else:
+        (package / "dashboard_publish.py").write_text(
+            publisher_source, encoding="utf-8"
+        )
+    public_content = PROJECT_ROOT / "src" / "xrag" / "public_content.py"
+    if public_content.exists():
+        shutil.copy2(public_content, package / "public_content.py")
+    else:
+        (package / "public_content.py").write_text("", encoding="utf-8")
+
+    assert run_git("init", "--bare", cwd=remote).returncode == 0
+    assert run_git("init", "-b", "main", cwd=root).returncode == 0
+    assert run_git("config", "user.name", "Wrapper Test", cwd=root).returncode == 0
+    assert run_git("config", "user.email", "wrapper@example.invalid", cwd=root).returncode == 0
+    assert run_git("remote", "add", "origin", str(remote), cwd=root).returncode == 0
+    assert run_git("add", "scripts", "src", cwd=root).returncode == 0
+    assert run_git("commit", "-m", "trusted publisher code", cwd=root).returncode == 0
+    return root, remote
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Python security boundary")
+@pytest.mark.parametrize(
+    "publisher_source,secret",
+    [
+        ("raise KeyError('auth_token=key-error-secret')\n", "key-error-secret"),
+        ("raise ImportError('ct0=import-error-secret')\n", "import-error-secret"),
+        ("raise SystemExit('api_key=exit-secret')\n", "exit-secret"),
+    ],
+)
+def test_trusted_wrapper_redacts_all_import_failures(
+    tmp_path: Path,
+    publisher_source: str,
+    secret: str,
+) -> None:
+    root, _ = create_trusted_publisher_repo(
+        tmp_path, publisher_source=publisher_source
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    _assert_generic_wrapper_failure(result, secret, str(root))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Python security boundary")
+def test_trusted_wrapper_rejects_modified_module_before_execution(
     tmp_path: Path,
 ) -> None:
-    missing = tmp_path / "auth_token=wrapper-secret"
+    root, _ = create_trusted_publisher_repo(
+        tmp_path,
+        publisher_source="class PagesPublisher:\n    pass\n",
+    )
+    marker = tmp_path / "modified-module-executed"
+    module = root / "src" / "xrag" / "dashboard_publish.py"
+    module.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['FAKE_MARKER']).write_text('executed', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
 
     result = subprocess.run(
-        [sys.executable, str(PUBLISH_WRAPPER), "--root", str(missing)],
+        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
+        env={**os.environ, "FAKE_MARKER": str(marker)},
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -865,27 +1035,15 @@ def test_publish_wrapper_rejects_missing_root_without_traceback_or_secret(
         check=False,
     )
 
-    assert result.returncode == 2
-    assert result.stderr == "Error: dashboard publication failed\n"
-    assert "wrapper-secret" not in result.stdout + result.stderr
-    assert "Traceback" not in result.stdout + result.stderr
+    _assert_generic_wrapper_failure(result, str(root), str(marker))
+    assert not marker.exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Git integration proof")
 def test_windows_python_wrapper_publishes_to_disposable_local_remote(
     tmp_path: Path,
 ) -> None:
-    root = tmp_path / "native Windows project"
-    remote = tmp_path / "origin.git"
-    root.mkdir()
-    remote.mkdir()
-    assert run_git("init", "--bare", cwd=remote).returncode == 0
-    assert run_git("init", "-b", "main", cwd=root).returncode == 0
-    assert run_git("config", "user.name", "Wrapper Test", cwd=root).returncode == 0
-    assert run_git("config", "user.email", "wrapper@example.invalid", cwd=root).returncode == 0
-    assert run_git("remote", "add", "origin", str(remote), cwd=root).returncode == 0
-    assert run_git("commit", "--allow-empty", "-m", "initial", cwd=root).returncode == 0
-    shutil.copytree(PROJECT_ROOT / "src" / "xrag", root / "src" / "xrag")
+    root, _ = create_trusted_publisher_repo(tmp_path)
     site = root / "data" / "dashboard-site"
     (site / "data").mkdir(parents=True)
     (site / "index.html").write_text("<!doctype html><title>Dashboard</title>", encoding="utf-8")
@@ -893,7 +1051,7 @@ def test_windows_python_wrapper_publishes_to_disposable_local_remote(
     (site / "data" / "latest.json").write_text("{}", encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, str(PUBLISH_WRAPPER), "--root", str(root)],
+        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -916,3 +1074,7 @@ def test_readme_documents_hybrid_scheduler_runtime() -> None:
     assert "Windows Python, Windows Git, and Git Credential Manager" in readme
     assert "--no-publish" in readme
     assert "Manual `dashboard update` still publishes by default" in readme
+    assert "Python 3.11" in readme
+    assert "PyYAML" in readme
+    assert "python.exe scripts/publish-dashboard.py --root" not in readme
+    assert "python.exe scripts/publish-dashboard.py" in readme

@@ -14,7 +14,7 @@ import subprocess
 from typing import Protocol
 import uuid
 
-from .dashboard_export import assert_public_content
+from .public_content import assert_public_content
 
 
 _TEXT_SUFFIXES = {".html", ".css", ".js", ".json"}

@@ -23,6 +23,27 @@ from xrag.markdown_store import MarkdownStore
 from xrag.models import LocalMedia, Post
 
 
+def test_publisher_import_needs_only_the_standard_library() -> None:
+    source = Path(__file__).resolve().parents[1] / "src"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            "import xrag.dashboard_publish; print('publisher-imported')",
+        ],
+        env={**os.environ, "PYTHONPATH": str(source)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "publisher-imported\n"
+
+
 QUERIES = (
     '"Autonomous AI Agents" OR "Agent Security"',
     '"World Models" OR Embodied AI',
