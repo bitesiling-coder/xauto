@@ -93,11 +93,11 @@ xrag --root . translation backfill
 
 Markdown 的 `text_zh`/`translation_zh` 是本地权威存档的一部分。翻译元数据记录目标语言 `zh-CN`、模型 ID、已安装快照 revision、英文源文本的 SHA-256 和翻译时间，用来判断能否安全复用译文；它不是原文替代品，也不会作为模型路径、缓存或内部哈希公开到看板。
 
-安装和补译可以新增模型文件，或原子更新需要译文的项目文件，但不会删除既有 Markdown、媒体或电脑中的其他文件。校验失败、模型缺失或哈希不匹配时，采集/补译会在写入前以非零状态失败；已验证的 live 模型清单和当前线上快照保持不变。单条推理或保护片段恢复失败时保留原文、记录脱敏错误并继续处理其他帖子；RAG 重建失败时保留现有稳定索引。修复网络、磁盘或模型目录问题后，重新运行相同命令即可；不要靠删除来源数据来绕过校验。失败后留下的安装临时目录可能仍保留以供审计，请先检查其内容和日志，再由管理员按明确的保留策略处理。
+安装和补译可以新增模型文件，或原子更新需要译文的项目文件，但不会删除既有的源 Markdown、源媒体或受控项目派生临时/索引路径以外的文件；受控项目派生临时文件和索引清理可能发生。校验失败、模型缺失或哈希不匹配时，采集/补译会在写入前以非零状态失败；已验证的 live 模型清单和当前线上快照保持不变。单条推理或保护片段恢复失败时保留原文、记录脱敏错误并继续处理其他帖子；RAG 重建失败时保留现有稳定索引。修复网络、磁盘或模型目录问题后，重新运行相同命令即可；不要靠删除来源数据来绕过校验。失败后留下的安装临时目录可能仍保留以供审计，请先检查其内容和日志，再由管理员按明确的保留策略处理。
 
 离线可用性依赖已安装且已校验的 `data/models/translation/`，因此备份权威 Markdown/媒体时也建议备份该目录；恢复到新机器后，如未携带完整模型快照，应先重新运行 `translation install`，再执行收集或补译。
 
-**Operational guarantees:** install the translation model before enabling the schedule. Daily translation is local-only and never retrieves a newer model. There is no automatic model upgrade or deletion. A verification or publication failure keeps the live snapshot. Installation temporary files may remain for audit after a failure. The translation workflow does not delete source Markdown, media, or other computer files.
+**Operational guarantees:** install the translation model before enabling the schedule. Daily translation is local-only and never retrieves a newer model. There is no automatic model upgrade or deletion. A verification or publication failure keeps the live snapshot. Installation temporary files may remain for audit after a failure. It never deletes existing source Markdown/media or files outside controlled project-derived temporary/index paths; controlled project-derived temporary/index cleanup may occur.
 
 ## 本地媒体与 Markdown
 
