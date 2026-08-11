@@ -173,6 +173,24 @@ def test_protect_text_uses_longest_overlapping_term_and_original_casing() -> Non
     assert "AI Agent" in protected.replacements.values()
 
 
+def test_protect_text_prefers_longer_term_when_different_starts_overlap() -> None:
+    original = "AI Agent Security"
+
+    protected = protect_text(original)
+
+    assert list(protected.replacements.values()) == ["Agent Security"]
+    assert protected.restore(protected.text) == original
+
+
+def test_protect_text_keeps_structural_token_priority_over_overlapping_term() -> None:
+    original = "@Autonomous AI Agents"
+
+    protected = protect_text(original)
+
+    assert "@Autonomous" in protected.replacements.values()
+    assert protected.restore(protected.text) == original
+
+
 def test_protect_text_avoids_marker_collision_in_original() -> None:
     original = "XRAG0000TOKEN then AI Agent"
     protected = protect_text(original)
@@ -205,6 +223,15 @@ def test_restore_rejects_lost_repeated_unknown_or_reordered_markers(
         ValueError, match="^protected translation spans were not preserved$"
     ):
         protected.restore(mutate(protected.text, markers))
+
+
+def test_restore_rejects_unknown_marker_with_more_than_four_digits() -> None:
+    protected = protect_text("AI Agent")
+
+    with pytest.raises(
+        ValueError, match="^protected translation spans were not preserved$"
+    ):
+        protected.restore(f"{protected.text} XRAG12345TOKEN")
 
 
 def test_protected_text_and_failure_are_frozen() -> None:
@@ -329,6 +356,44 @@ def test_enrich_skips_non_english_but_keeps_self_consistent_translation() -> Non
     assert outcome.skipped == 1
     assert outcome.post.text_zh == "已有译文"
     assert outcome.post.translation_zh is metadata
+
+
+def test_enrich_reuses_matching_existing_translation_for_non_english() -> None:
+    text = "这是一段中文内容"
+    incoming = make_post(text)
+    existing = make_post(
+        text,
+        text_zh="已有中文译文",
+        translation_zh=metadata_for(text),
+    )
+    engine = FakeEngine()
+
+    outcome = TranslationEnricher(engine).enrich(incoming, existing)
+
+    assert engine.calls == []
+    assert outcome.reused == 1
+    assert outcome.skipped == 0
+    assert outcome.post.text_zh == "已有中文译文"
+    assert outcome.post.translation_zh == existing.translation_zh
+
+
+def test_enrich_skips_non_english_and_clears_stale_existing_translation() -> None:
+    text = "这是一段中文内容"
+    incoming = make_post(text)
+    existing = make_post(
+        text,
+        text_zh="陈旧中文译文",
+        translation_zh=metadata_for(text, revision="old-revision"),
+    )
+    engine = FakeEngine()
+
+    outcome = TranslationEnricher(engine).enrich(incoming, existing)
+
+    assert engine.calls == []
+    assert outcome.reused == 0
+    assert outcome.skipped == 1
+    assert outcome.post.text_zh == ""
+    assert outcome.post.translation_zh is None
 
 
 def test_batch_exception_retries_each_item_so_quote_can_succeed() -> None:

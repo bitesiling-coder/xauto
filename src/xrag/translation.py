@@ -10,7 +10,7 @@ from typing import Callable, Literal, Mapping, Protocol, Sequence
 from xrag.models import Post, QuotedPost, TranslationMetadata
 
 
-_MARKER_PATTERN = re.compile(r"XRAG\d{4}TOKEN")
+_MARKER_PATTERN = re.compile(r"XRAG\d+TOKEN")
 _EXCLUDED_PATTERN = re.compile(
     r"https://[^\s]+|`[^`]*`|(?<!\w)[@#$][\w-]+",
     re.UNICODE,
@@ -43,11 +43,12 @@ _GLOSSARY = (
     "ETP",
     "x402",
 )
-_GLOSSARY_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])(?:"
-    + "|".join(re.escape(term) for term in _GLOSSARY)
-    + r")(?![A-Za-z0-9])",
-    re.IGNORECASE,
+_GLOSSARY_PATTERNS = tuple(
+    re.compile(
+        rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+    for term in _GLOSSARY
 )
 
 _RESTORE_ERROR = "protected translation spans were not preserved"
@@ -131,18 +132,27 @@ def needs_english_translation(text: str) -> bool:
 
 
 def protect_text(text: str) -> ProtectedText:
-    candidates: list[tuple[int, int]] = []
-    for pattern in (_EXCLUDED_PATTERN, _GLOSSARY_PATTERN):
-        candidates.extend((match.start(), match.end()) for match in pattern.finditer(text))
-    candidates.sort(key=lambda span: (span[0], -(span[1] - span[0])))
-
+    structural = [
+        (match.start(), match.end()) for match in _EXCLUDED_PATTERN.finditer(text)
+    ]
+    structural.sort(key=lambda span: (span[0], -(span[1] - span[0])))
     selected: list[tuple[int, int]] = []
-    cursor = 0
-    for start, end in candidates:
-        if start < cursor:
-            continue
-        selected.append((start, end))
-        cursor = end
+    for span in structural:
+        if not any(_spans_overlap(span, chosen) for chosen in selected):
+            selected.append(span)
+
+    glossary: list[tuple[int, int, int]] = []
+    for term_index, pattern in enumerate(_GLOSSARY_PATTERNS):
+        glossary.extend(
+            (match.start(), match.end(), term_index)
+            for match in pattern.finditer(text)
+        )
+    glossary.sort(key=lambda span: (-(span[1] - span[0]), span[0], span[2]))
+    for start, end, _term_index in glossary:
+        span = (start, end)
+        if not any(_spans_overlap(span, chosen) for chosen in selected):
+            selected.append(span)
+    selected.sort()
 
     replacements: dict[str, str] = {}
     chunks: list[str] = []
@@ -211,11 +221,23 @@ class TranslationEnricher:
 
         for owner, current, reuse_source in parts:
             if not needs_english_translation(current.text):
-                skipped += 1
-                if self._translation_matches(current, current.text):
+                using_existing = existing is not None and (
+                    owner == "post" or existing.quoted_post is not None
+                )
+                if (
+                    using_existing
+                    and reuse_source is not None
+                    and self._translation_matches(reuse_source, current.text)
+                ):
+                    reused += 1
+                    value = reuse_source.text_zh
+                    metadata = reuse_source.translation_zh
+                elif self._translation_matches(current, current.text):
+                    skipped += 1
                     value = current.text_zh
                     metadata = current.translation_zh
                 else:
+                    skipped += 1
                     value = ""
                     metadata = None
                 if owner == "post":
@@ -355,3 +377,7 @@ class TranslationEnricher:
 
 def _source_sha256(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+def _spans_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
+    return left[0] < right[1] and right[0] < left[1]
