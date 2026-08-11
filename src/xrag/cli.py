@@ -9,19 +9,23 @@ from typing import Annotated, Any, Callable, TypeVar
 import typer
 import yaml
 
-from .config import load_config
+from .config import AppConfig, load_config
 from .dashboard_export import DashboardBuilder
 from .dashboard_publish import PagesPublisher
 from .markdown_store import MarkdownStore
 from .media_store import MediaStore
 from .opencli import OpenCLIClient, OpenCLIError
 from .service import XragService
+from .translation import TranslationEnricher
+from .translation_model import TransformersTranslationEngine, install_translation_model
 from .vector_store import VectorStore
 
 
 app = typer.Typer(no_args_is_help=True)
 dashboard_app = typer.Typer(no_args_is_help=True)
 app.add_typer(dashboard_app, name="dashboard")
+translation_app = typer.Typer(no_args_is_help=True)
+app.add_typer(translation_app, name="translation")
 T = TypeVar("T")
 
 _SECRET = re.compile(
@@ -53,6 +57,25 @@ def main(
 
 def build_service(root: Path) -> XragService:
     config = load_config(root.resolve())
+    return _build_service(config)
+
+
+def build_translation_enricher(config: AppConfig) -> TranslationEnricher:
+    return TranslationEnricher(
+        TransformersTranslationEngine(config.translation_model_dir)
+    )
+
+
+def build_ingest_service(root: Path) -> XragService:
+    config = load_config(root.resolve())
+    return _build_service(
+        config, translation=build_translation_enricher(config)
+    )
+
+
+def _build_service(
+    config: AppConfig, *, translation: TranslationEnricher | None = None
+) -> XragService:
     markdown = MarkdownStore(config.markdown_dir)
     media = MediaStore(config.media_dir)
 
@@ -65,6 +88,7 @@ def build_service(root: Path) -> XragService:
         markdown,
         None,
         media=media,
+        translation=translation,
         vector_factory=vector_factory,
         rebuild_factory=vector_factory,
     )
@@ -88,11 +112,25 @@ def _service(ctx: typer.Context) -> XragService:
     return build_service(ctx.obj)
 
 
+def _ingest_service(ctx: typer.Context) -> XragService:
+    return build_ingest_service(ctx.obj)
+
+
 def _run(operation: Callable[[], T]) -> T:
     try:
         return operation()
     except (OpenCLIError, yaml.YAMLError, ValueError, RuntimeError, OSError) as error:
         typer.echo(f"Error: {_redact(str(error))}", err=True)
+        raise typer.Exit(code=2) from None
+
+
+def _run_translation(operation: Callable[[], T]) -> T:
+    try:
+        return operation()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception:
+        typer.echo("Error: translation unavailable", err=True)
         raise typer.Exit(code=2) from None
 
 
@@ -116,7 +154,11 @@ def _configure_utf8_streams() -> None:
 def _summary(keyword: str, counts: dict[str, int]) -> str:
     return (
         f"{keyword}: found={counts['found']} stored={counts['stored']} "
-        f"chunks={counts['chunks']} errors={counts['errors']}"
+        f"chunks={counts['chunks']} errors={counts['errors']} "
+        f"translated={counts['translated']} "
+        f"reused={counts['translation_reused']} "
+        f"skipped={counts['translation_skipped']} "
+        f"translation-errors={counts['translation_errors']}"
     )
 
 
@@ -140,12 +182,12 @@ def collect(
         typer.echo("Error: --limit cannot be used with --all.", err=True)
         raise typer.Exit(code=2)
     if all_keywords:
-        results = _run(lambda: _service(ctx).collect_all())
+        results = _run(lambda: _ingest_service(ctx).collect_all())
         for item_keyword, counts in results:
             typer.echo(_summary(item_keyword, counts))
         return
     assert keyword is not None
-    counts = _run(lambda: _service(ctx).collect(keyword, limit))
+    counts = _run(lambda: _ingest_service(ctx).collect(keyword, limit))
     typer.echo(_summary(keyword, counts))
 
 
@@ -154,7 +196,7 @@ def import_command(
     ctx: typer.Context,
     source: Annotated[Path, typer.Argument(help="File or directory to import.")],
 ) -> None:
-    result = _run(lambda: _service(ctx).import_path(source))
+    result = _run(lambda: _ingest_service(ctx).import_path(source))
     _print_json(result)
 
 
@@ -188,6 +230,25 @@ def rebuild(ctx: typer.Context) -> None:
     _print_json(_run(lambda: build_rebuild_service(ctx.obj).rebuild()))
 
 
+@translation_app.command("install")
+def translation_install(ctx: typer.Context) -> None:
+    def install() -> dict[str, object]:
+        config = load_config(ctx.obj)
+        installed = install_translation_model(config.translation_model_dir)
+        return {
+            "model_id": installed.model_id,
+            "revision": installed.revision,
+            "verified_files": len(installed.files),
+        }
+
+    _print_json(_run_translation(install))
+
+
+@translation_app.command("backfill")
+def translation_backfill(ctx: typer.Context) -> None:
+    _print_json(_run_translation(lambda: _ingest_service(ctx).translate_all()))
+
+
 @dashboard_app.command("build")
 def dashboard_build(ctx: typer.Context) -> None:
     _print_json(_run(lambda: build_dashboard(ctx.obj).build()))
@@ -208,7 +269,7 @@ def dashboard_publish(ctx: typer.Context) -> None:
 def _collect_build_publish(
     root: Path, *, publish: bool = True
 ) -> dict[str, object]:
-    collection = build_service(root).collect_all()
+    collection = build_ingest_service(root).collect_all()
     if sum(counts["stored"] for _, counts in collection) == 0:
         raise RuntimeError(
             "Collection stored no posts; dashboard publication stopped"

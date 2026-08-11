@@ -25,13 +25,46 @@ class FakeService:
 
     def collect(self, keyword: str, limit: int | None = None) -> dict[str, int]:
         self.calls.append(("collect", keyword, limit))
-        return {"found": 3, "stored": 2, "chunks": 4, "errors": 1}
+        return {
+            "found": 3,
+            "stored": 2,
+            "chunks": 4,
+            "errors": 1,
+            "translated": 1,
+            "translation_reused": 2,
+            "translation_skipped": 3,
+            "translation_errors": 4,
+        }
 
     def collect_all(self) -> list[tuple[str, dict[str, int]]]:
         self.calls.append(("collect_all",))
         return [
-            ("人工智能", {"found": 2, "stored": 2, "chunks": 3, "errors": 0}),
-            ("Python", {"found": 1, "stored": 1, "chunks": 1, "errors": 0}),
+            (
+                "人工智能",
+                {
+                    "found": 2,
+                    "stored": 2,
+                    "chunks": 3,
+                    "errors": 0,
+                    "translated": 2,
+                    "translation_reused": 0,
+                    "translation_skipped": 0,
+                    "translation_errors": 0,
+                },
+            ),
+            (
+                "Python",
+                {
+                    "found": 1,
+                    "stored": 1,
+                    "chunks": 1,
+                    "errors": 0,
+                    "translated": 0,
+                    "translation_reused": 1,
+                    "translation_skipped": 0,
+                    "translation_errors": 0,
+                },
+            ),
         ]
 
     def import_path(self, source: Path) -> dict[str, int]:
@@ -49,6 +82,19 @@ class FakeService:
     def rebuild(self) -> dict[str, int]:
         self.calls.append(("rebuild",))
         return {"documents": 2, "chunks": 5, "errors": 0}
+
+    def translate_all(self) -> dict[str, int]:
+        self.calls.append(("translate_all",))
+        return {
+            "scanned": 3,
+            "translated": 1,
+            "reused": 1,
+            "skipped": 1,
+            "errors": 0,
+            "updated_documents": 1,
+            "missing_source_files": 0,
+            "chunks": 4,
+        }
 
 
 class FakeDashboardBuilder:
@@ -78,6 +124,170 @@ def install_fake(monkeypatch, service: FakeService) -> list[Path]:
 
     monkeypatch.setattr(cli, "build_service", fake_build)
     return roots
+
+
+def install_ingest_fake(monkeypatch, service: FakeService) -> list[Path]:
+    roots: list[Path] = []
+
+    def fake_build(root: Path) -> FakeService:
+        roots.append(root)
+        return service
+
+    monkeypatch.setattr(cli, "build_ingest_service", fake_build)
+    return roots
+
+
+def test_translation_install_only_installs_model_and_hides_snapshot_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from xrag.config import AppConfig
+
+    calls: list[Path] = []
+    configuration = AppConfig(
+        tmp_path.resolve(), False, "03:00", "UTC", 7, 0, ("AI",), "model"
+    )
+    snapshot = tmp_path / "private" / "snapshots" / ("a" * 40)
+    installed = SimpleNamespace(
+        model_id="Helsinki-NLP/opus-mt-en-zh",
+        revision="a" * 40,
+        snapshot_path=snapshot,
+        files=(("config.json", "1" * 64), ("model.bin", "2" * 64)),
+    )
+    monkeypatch.setattr(
+        cli,
+        "install_translation_model",
+        lambda path: calls.append(path) or installed,
+        raising=False,
+    )
+    monkeypatch.setattr(cli, "load_config", lambda root: configuration)
+    monkeypatch.setattr(
+        cli,
+        "build_ingest_service",
+        lambda root: pytest.fail("install must not build an ingest service"),
+        raising=False,
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "translation", "install"]
+    )
+
+    assert result.exit_code == 0
+    assert calls == [tmp_path.resolve() / "data" / "models" / "translation"]
+    assert json.loads(result.stdout) == {
+        "model_id": "Helsinki-NLP/opus-mt-en-zh",
+        "revision": "a" * 40,
+        "verified_files": 2,
+    }
+    assert str(snapshot) not in result.stdout
+
+
+def test_translation_backfill_uses_translation_enabled_ingest_service(
+    monkeypatch, tmp_path: Path
+) -> None:
+    service = FakeService()
+    roots = install_ingest_fake(monkeypatch, service)
+    monkeypatch.setattr(
+        cli,
+        "build_service",
+        lambda root: pytest.fail("backfill must use the ingest service"),
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "translation", "backfill"]
+    )
+
+    assert result.exit_code == 0
+    assert roots == [tmp_path.resolve()]
+    assert service.calls == [("translate_all",)]
+    assert json.loads(result.stdout)["updated_documents"] == 1
+
+
+def test_translation_commands_fail_closed_without_sensitive_error_details(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "build_ingest_service",
+        lambda root: (_ for _ in ()).throw(
+            RuntimeError("body=/private/post.md auth_token=translation-secret")
+        ),
+        raising=False,
+    )
+
+    result = runner.invoke(
+        cli.app, ["--root", str(tmp_path), "translation", "backfill"]
+    )
+
+    assert result.exit_code == 2
+    assert result.stderr == "Error: translation unavailable\n"
+    assert "/private/post.md" not in result.output
+    assert "translation-secret" not in result.output
+    assert "Traceback" not in result.output
+
+
+def test_build_service_is_model_independent_and_ingest_factory_adds_translation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from xrag.config import AppConfig
+
+    configuration = AppConfig(
+        tmp_path.resolve(), False, "03:00", "UTC", 7, 0, ("AI",), "model"
+    )
+    engine_paths: list[Path] = []
+    enrichers: list[object] = []
+
+    class Engine:
+        def __init__(self, path: Path) -> None:
+            engine_paths.append(path)
+
+    class Enricher:
+        def __init__(self, engine: object) -> None:
+            enrichers.append(engine)
+
+    monkeypatch.setattr(cli, "load_config", lambda root: configuration)
+    monkeypatch.setattr(
+        cli, "TransformersTranslationEngine", Engine, raising=False
+    )
+    monkeypatch.setattr(cli, "TranslationEnricher", Enricher, raising=False)
+
+    ordinary = cli.build_service(tmp_path)
+    ingest = cli.build_ingest_service(tmp_path)
+
+    assert ordinary.translation is None
+    assert engine_paths == [configuration.translation_model_dir]
+    assert enrichers and ingest.translation is not None
+
+
+def test_read_only_commands_never_build_translation_ingest_service(
+    monkeypatch, tmp_path: Path
+) -> None:
+    service = FakeService()
+    dashboard = FakeDashboardBuilder()
+    publisher = FakePublisher()
+    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_rebuild_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_dashboard", lambda root: dashboard)
+    monkeypatch.setattr(cli, "build_pages_publisher", lambda root: publisher)
+    monkeypatch.setattr(
+        cli,
+        "build_ingest_service",
+        lambda root: pytest.fail("read-only command must not require translation"),
+        raising=False,
+    )
+
+    commands = [
+        ["search", "nothing"],
+        ["status"],
+        ["rebuild"],
+        ["dashboard", "build"],
+        ["dashboard", "publish"],
+    ]
+    results = [
+        runner.invoke(cli.app, ["--root", str(tmp_path), *command])
+        for command in commands
+    ]
+
+    assert all(result.exit_code == 0 for result in results)
 
 
 def test_dashboard_build_does_not_initialize_xrag_service(
@@ -171,7 +381,7 @@ def test_dashboard_update_collects_before_build_and_publish(
         "changed": True,
         "branch": "gh-pages",
     }
-    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: service)
     monkeypatch.setattr(
         cli, "build_dashboard", lambda root: dashboard
     )
@@ -200,7 +410,7 @@ def test_dashboard_update_no_publish_collects_then_builds_without_publisher(
         "posts": 1,
         "media": 0,
     }
-    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: service)
     monkeypatch.setattr(cli, "build_dashboard", lambda root: dashboard)
     monkeypatch.setattr(
         cli,
@@ -239,7 +449,7 @@ def test_dashboard_update_explicit_publish_keeps_manual_publish_semantics(
     dashboard.build = lambda: events.append("build") or {"posts": 1}
     publisher = FakePublisher()
     publisher.publish = lambda path: events.append("publish") or {"changed": True}
-    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: service)
     monkeypatch.setattr(cli, "build_dashboard", lambda root: dashboard)
     monkeypatch.setattr(cli, "build_pages_publisher", lambda root: publisher)
 
@@ -260,7 +470,7 @@ def test_dashboard_update_stops_before_build_when_collection_stores_nothing(
     service.collect_all = lambda: [
         ("query", {"found": 0, "stored": 0, "chunks": 0, "errors": 1})
     ]
-    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: service)
     monkeypatch.setattr(
         cli,
         "build_dashboard",
@@ -360,33 +570,38 @@ def test_dashboard_operational_error_is_redacted_without_traceback(
 
 def test_collect_keyword_prints_summary_and_forwards_arguments(monkeypatch, tmp_path: Path) -> None:
     service = FakeService()
-    roots = install_fake(monkeypatch, service)
+    roots = install_ingest_fake(monkeypatch, service)
 
     result = runner.invoke(cli.app, ["--root", str(tmp_path), "collect", "AI", "--limit", "7"])
 
     assert result.exit_code == 0
-    assert result.stdout == "AI: found=3 stored=2 chunks=4 errors=1\n"
+    assert result.stdout == (
+        "AI: found=3 stored=2 chunks=4 errors=1 translated=1 "
+        "reused=2 skipped=3 translation-errors=4\n"
+    )
     assert service.calls == [("collect", "AI", 7)]
     assert roots == [tmp_path.resolve()]
 
 
 def test_collect_all_prints_one_summary_per_keyword(monkeypatch) -> None:
     service = FakeService()
-    install_fake(monkeypatch, service)
+    install_ingest_fake(monkeypatch, service)
 
     result = runner.invoke(cli.app, ["collect", "--all"])
 
     assert result.exit_code == 0
     assert result.stdout == (
-        "人工智能: found=2 stored=2 chunks=3 errors=0\n"
-        "Python: found=1 stored=1 chunks=1 errors=0\n"
+        "人工智能: found=2 stored=2 chunks=3 errors=0 translated=2 "
+        "reused=0 skipped=0 translation-errors=0\n"
+        "Python: found=1 stored=1 chunks=1 errors=0 translated=0 "
+        "reused=1 skipped=0 translation-errors=0\n"
     )
     assert service.calls == [("collect_all",)]
 
 
 def test_collect_rejects_missing_or_conflicting_mode_without_initialization(monkeypatch) -> None:
     calls: list[Path] = []
-    monkeypatch.setattr(cli, "build_service", lambda root: calls.append(root))
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: calls.append(root))
 
     missing = runner.invoke(cli.app, ["collect"])
     conflicting = runner.invoke(cli.app, ["collect", "AI", "--all"])
@@ -399,7 +614,7 @@ def test_collect_rejects_missing_or_conflicting_mode_without_initialization(monk
 
 
 def test_collect_rejects_nonpositive_limit(monkeypatch) -> None:
-    monkeypatch.setattr(cli, "build_service", lambda root: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: (_ for _ in ()).throw(AssertionError()))
 
     result = runner.invoke(cli.app, ["collect", "AI", "--limit", "0"])
 
@@ -409,7 +624,7 @@ def test_collect_rejects_nonpositive_limit(monkeypatch) -> None:
 
 def test_collect_all_rejects_limit_without_initialization(monkeypatch) -> None:
     calls: list[Path] = []
-    monkeypatch.setattr(cli, "build_service", lambda root: calls.append(root))
+    monkeypatch.setattr(cli, "build_ingest_service", lambda root: calls.append(root))
 
     result = runner.invoke(cli.app, ["collect", "--all", "--limit", "5"])
 
@@ -451,9 +666,11 @@ def test_search_reports_no_results(monkeypatch) -> None:
 
 
 def test_import_status_and_rebuild_emit_unicode_json(monkeypatch, tmp_path: Path) -> None:
-    service = FakeService()
-    install_fake(monkeypatch, service)
-    monkeypatch.setattr(cli, "build_rebuild_service", lambda root: service)
+    ingest_service = FakeService()
+    read_service = FakeService()
+    install_ingest_fake(monkeypatch, ingest_service)
+    install_fake(monkeypatch, read_service)
+    monkeypatch.setattr(cli, "build_rebuild_service", lambda root: read_service)
     source = tmp_path / "输入.json"
     source.write_text("[]", encoding="utf-8")
 
@@ -465,7 +682,7 @@ def test_import_status_and_rebuild_emit_unicode_json(monkeypatch, tmp_path: Path
     assert json.loads(imported.stdout) == {"files": 1, "imported": 2, "chunks": 3, "errors": 0}
     assert "中文" in status.stdout and "\\u4e2d" not in status.stdout
     assert json.loads(rebuilt.stdout) == {"documents": 2, "chunks": 5, "errors": 0}
-    assert service.calls[0] == ("import", source)
+    assert ingest_service.calls == [("import", source)]
 
 
 def test_rebuild_builder_defers_chroma_open_and_factory_uses_only_staging(
