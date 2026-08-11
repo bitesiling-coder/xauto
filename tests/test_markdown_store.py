@@ -355,17 +355,72 @@ def test_extract_body_text_rejects_ambiguous_canonical_markers(body: str) -> Non
         extract_body_text(body)
 
 
-def test_read_rejects_text_containing_ambiguous_canonical_markers(tmp_path: Path) -> None:
-    text = (
-        "before\n<!-- xrag:text:start -->\nmiddle\n"
-        "<!-- xrag:text:end -->\nafter"
-    )
-    store = MarkdownStore(tmp_path)
+def post_with_reserved_body(field: str, marker: str) -> Post:
+    sensitive = f"SENSITIVE_BODY {marker} must-not-leak"
+    if field == "post.text":
+        return make_post(text=sensitive)
+    if field == "post.text_zh":
+        return make_post(
+            text="original",
+            text_zh=sensitive,
+            translation_zh=translation_for("original"),
+        )
+    if field == "quoted.text":
+        return make_post(
+            quoted_post=QuotedPost(
+                "456", "quoted", sensitive, "", "https://x.com/i/status/456"
+            )
+        )
+    if field == "quoted.text_zh":
+        quoted_text = "quoted original"
+        return make_post(
+            quoted_post=QuotedPost(
+                "456",
+                "quoted",
+                quoted_text,
+                "",
+                "https://x.com/i/status/456",
+                text_zh=sensitive,
+                translation_zh=translation_for(quoted_text),
+            )
+        )
+    raise AssertionError(field)
 
-    path = store.upsert(make_post(text=text))
 
-    with pytest.raises(ValueError, match="invalid Markdown front matter"):
-        store.read(path)
+@pytest.mark.parametrize(
+    "field, marker",
+    [
+        ("post.text", "<!-- xrag:text:start -->"),
+        ("post.text_zh", "<!-- xrag:text:end -->"),
+        ("quoted.text", "<!-- xrag:text-zh:start -->"),
+        ("quoted.text_zh", "<!-- xrag:text-zh:end -->"),
+    ],
+)
+def test_upsert_rejects_reserved_body_markers_before_any_write(
+    tmp_path: Path, field: str, marker: str
+) -> None:
+    invalid = post_with_reserved_body(field, marker)
+    new_directory = tmp_path / "new" / "posts"
+
+    with pytest.raises(ValueError) as first_error:
+        MarkdownStore(new_directory).upsert(invalid)
+
+    assert str(first_error.value) == "post content contains reserved xrag Markdown marker"
+    assert "SENSITIVE_BODY" not in str(first_error.value)
+    assert not new_directory.exists()
+
+    existing_directory = tmp_path / "existing"
+    store = MarkdownStore(existing_directory)
+    path = store.upsert(make_post(text="existing safe body"))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError) as update_error:
+        store.upsert(invalid)
+
+    assert str(update_error.value) == "post content contains reserved xrag Markdown marker"
+    assert "SENSITIVE_BODY" not in str(update_error.value)
+    assert path.read_bytes() == before
+    assert list(existing_directory.glob("*.tmp")) == []
 
 
 def test_legacy_body_treats_marker_literals_as_plain_text(tmp_path: Path) -> None:

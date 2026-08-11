@@ -36,7 +36,13 @@ def load_posts(path: Path) -> list[Post]:
     else:
         raise ValueError(f"Unsupported import file type: {path.suffix or '(no extension)'}")
 
-    posts = [_normalize_row(row) for row in _rows(rows)]
+    normalized_rows = _rows(rows)
+    try:
+        posts = [_normalize_row(row) for row in normalized_rows]
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Invalid imported post id/text/bilingual metadata in {path}"
+        ) from error
     _validate_post_ids(posts)
     return posts
 
@@ -75,14 +81,18 @@ def _load_markdown(path: Path) -> dict[str, object]:
     row = dict(metadata)
     if "id" not in row and _SAFE_ID.fullmatch(path.stem):
         row["id"] = path.stem
-    row["text"] = extract_body_text(
-        content[end + len("\n---\n") :],
-        canonical=_is_canonical_metadata(row),
-    )
-    row["text_zh"] = extract_body_translation(
-        content[end + len("\n---\n") :],
-        canonical=_is_canonical_metadata(row),
-    )
+    body = content[end + len("\n---\n") :]
+    try:
+        row["text"] = extract_body_text(
+            body,
+            canonical=_is_canonical_metadata(row),
+        )
+        row["text_zh"] = extract_body_translation(
+            body,
+            canonical=_is_canonical_metadata(row),
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Invalid Markdown body in {path}") from error
     return row
 
 

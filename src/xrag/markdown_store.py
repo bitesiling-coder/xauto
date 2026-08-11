@@ -32,6 +32,7 @@ _TEXT_START = "<!-- xrag:text:start -->"
 _TEXT_END = "<!-- xrag:text:end -->"
 _TEXT_ZH_START = "<!-- xrag:text-zh:start -->"
 _TEXT_ZH_END = "<!-- xrag:text-zh:end -->"
+_RESERVED_BODY_MARKERS = (_TEXT_START, _TEXT_END, _TEXT_ZH_START, _TEXT_ZH_END)
 _TRANSLATION_FIELDS = {
     "language",
     "model_id",
@@ -50,6 +51,10 @@ class MarkdownStore:
         self._clock = clock or (lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
 
     def upsert(self, post: Post) -> Path:
+        body_values: list[object] = [post.text, post.text_zh]
+        if post.quoted_post is not None:
+            body_values.extend([post.quoted_post.text, post.quoted_post.text_zh])
+        _reject_reserved_body_markers(body_values)
         text_zh = _validate_translation_pair(
             post.text, post.text_zh, post.translation_zh, "translation_zh"
         )
@@ -279,6 +284,14 @@ def extract_body_translation(body: str, *, canonical: bool = True) -> str:
     if not text_zh.strip():
         raise ValueError("invalid canonical Markdown translation markers")
     return text_zh
+
+
+def _reject_reserved_body_markers(values: list[object]) -> None:
+    for value in values:
+        if isinstance(value, str) and any(
+            marker in value for marker in _RESERVED_BODY_MARKERS
+        ):
+            raise ValueError("post content contains reserved xrag Markdown marker")
 
 
 def _render_body(post: Post) -> str:

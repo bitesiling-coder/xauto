@@ -145,8 +145,68 @@ def test_load_posts_rejects_invalid_translation_pairs(
     path = tmp_path / "invalid.json"
     path.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
 
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(ValueError) as error:
         load_posts(path)
+
+    assert str(path) in str(error.value)
+
+
+@pytest.mark.parametrize("suffix", [".yaml", ".json"])
+def test_load_posts_wraps_bilingual_metadata_errors_without_leaking_payload(
+    tmp_path: Path, suffix: str
+) -> None:
+    sensitive = "SENSITIVE_METADATA_PAYLOAD"
+    if suffix == ".json":
+        row: object = {
+            "id": "post",
+            "text": "original",
+            "text_zh": "译文",
+            "translation_zh": sensitive,
+        }
+    else:
+        row = {
+            "id": "post",
+            "text": "original",
+            "quoted_tweet": sensitive,
+        }
+    path = tmp_path / f"invalid{suffix}"
+    if suffix == ".json":
+        path.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+    else:
+        path.write_text(yaml.safe_dump(row, allow_unicode=True), encoding="utf-8")
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError) as error:
+        load_posts(path)
+
+    assert str(path) in str(error.value)
+    assert sensitive not in str(error.value)
+    assert path.read_bytes() == before
+    assert list(tmp_path.glob("*.md")) == []
+
+
+def test_load_posts_wraps_markdown_body_errors_without_leaking_payload(
+    tmp_path: Path,
+) -> None:
+    sensitive = "SENSITIVE_MARKDOWN_PAYLOAD"
+    path = tmp_path / "invalid.md"
+    path.write_text(
+        "---\nid: post\nbody_format: xrag-v1\n---\n"
+        "<!-- xrag:text:start -->\noriginal\n<!-- xrag:text:end -->\n"
+        f"<!-- xrag:text-zh:start -->\n{sensitive}\n",
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+    before_names = sorted(item.name for item in tmp_path.iterdir())
+
+    with pytest.raises(ValueError) as error:
+        load_posts(path)
+
+    assert str(path) in str(error.value)
+    assert "Invalid Markdown body" in str(error.value)
+    assert sensitive not in str(error.value)
+    assert path.read_bytes() == before
+    assert sorted(item.name for item in tmp_path.iterdir()) == before_names
 
 
 @pytest.mark.parametrize("suffix, content", [
