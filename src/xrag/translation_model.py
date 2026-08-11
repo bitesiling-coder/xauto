@@ -21,7 +21,7 @@ _REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 _HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 _STAGING_PATTERN = re.compile(r"\.install-[0-9a-f]{32}")
 _TEMP_MANIFEST_PATTERN = re.compile(r"\.manifest-[0-9a-f]{32}\.tmp")
-_QUARANTINE_PATTERN = re.compile(r"\.quarantine-[0-9a-f]{32}")
+_RETAINED_PATTERN = re.compile(r"\.retained-[0-9a-f]{32}")
 _MANIFEST_KEYS = {"version", "model_id", "revision", "snapshot", "files"}
 
 
@@ -373,7 +373,7 @@ def _install_translation_model_transaction(
         staging = _new_staging_directory(resolved_root)
         staging_identity = _ownership_identity(_require_directory(staging))
         downloader(repo_id=MODEL_ID, revision=revision, local_dir=staging)
-        _remove_download_cache(staging)
+        _validate_download_cache(staging)
         staged_files = _hash_snapshot(staging)
 
         snapshots = resolved_root / "snapshots"
@@ -476,15 +476,13 @@ def _new_staging_directory(root: Path) -> Path:
     raise ValueError("could not allocate staging directory")
 
 
-def _remove_download_cache(staging: Path) -> None:
+def _validate_download_cache(staging: Path) -> None:
     cache = staging / ".cache"
     if not os.path.lexists(cache):
         return
     if cache.parent != staging or cache.name != ".cache":
         raise ValueError("unsafe cache path")
-    expected = _ownership_identity(_require_directory(cache))
-    if not _quarantine_and_delete_directory(staging, cache, expected):
-        raise ValueError("could not safely clean download cache")
+    _walk_tree(cache, hash_files=False)
 
 
 def _hash_snapshot(snapshot: Path) -> dict[str, str]:
@@ -514,9 +512,9 @@ def _cleanup_owned_staging(
             or not os.path.lexists(staging)
         ):
             return False
-        return _quarantine_and_delete_directory(
-            root, staging, expected_identity
-        )
+        return _retain_owned(
+            root, staging, expected_identity, _require_directory
+        ) is not None
     except Exception:
         return False
 
@@ -533,34 +531,27 @@ def _cleanup_owned_manifest(
             or not os.path.lexists(path)
         ):
             return False
-        quarantine = _quarantine_owned(
+        retained = _retain_owned(
             root, path, expected_identity, _require_regular_file
         )
-        if quarantine is None:
-            return False
-        info = _require_regular_file(quarantine)
-        if _ownership_identity(info) != expected_identity:
-            return False
-        return _delete_quarantined_file(
-            root, quarantine, expected_identity
-        )
+        return retained is not None
     except Exception:
         return False
 
 
-def _new_quarantine(parent: Path) -> Path:
+def _new_retained(parent: Path) -> Path:
     for _attempt in range(16):
-        candidate = parent / f".quarantine-{uuid.uuid4().hex}"
+        candidate = parent / f".retained-{uuid.uuid4().hex}"
         if (
             candidate.parent == parent
-            and _QUARANTINE_PATTERN.fullmatch(candidate.name) is not None
+            and _RETAINED_PATTERN.fullmatch(candidate.name) is not None
             and not os.path.lexists(candidate)
         ):
             return candidate
-    raise ValueError("could not allocate quarantine")
+    raise ValueError("could not allocate retained path")
 
 
-def _quarantine_owned(
+def _retain_owned(
     parent: Path,
     path: Path,
     expected_identity: tuple[int, int],
@@ -568,260 +559,27 @@ def _quarantine_owned(
 ) -> Path | None:
     if path.parent != parent or not os.path.lexists(path):
         return None
-    quarantine = _new_quarantine(parent)
+    retained = _new_retained(parent)
     try:
-        os.replace(path, quarantine)
+        os.replace(path, retained)
     except Exception:
         try:
-            moved = require(quarantine)
+            moved = require(retained)
             if (
                 _ownership_identity(moved) == expected_identity
                 and not os.path.lexists(path)
             ):
-                return quarantine
+                return retained
         except Exception:
             pass
         raise
     try:
-        moved = require(quarantine)
+        moved = require(retained)
         if _ownership_identity(moved) == expected_identity:
-            return quarantine
-    except Exception:
-        pass
-    try:
-        if not os.path.lexists(path) and os.path.lexists(quarantine):
-            os.replace(quarantine, path)
+            return retained
     except Exception:
         pass
     return None
-
-
-def _quarantine_and_delete_directory(
-    parent: Path,
-    path: Path,
-    expected_identity: tuple[int, int],
-) -> bool:
-    quarantine = _quarantine_owned(
-        parent, path, expected_identity, _require_directory
-    )
-    if quarantine is None:
-        return False
-    if os.name != "nt":
-        return _delete_quarantined_tree_posix(
-            parent, quarantine, expected_identity
-        )
-    try:
-        tree = _walk_tree(quarantine, hash_files=False)
-        if _ownership_identity(_require_directory(quarantine)) != expected_identity:
-            return False
-        files = [
-            node for node in tree.values() if node.kind == "file"
-        ]
-        directories = [
-            node
-            for relative, node in tree.items()
-            if node.kind == "directory" and relative != "."
-        ]
-        for node in sorted(
-            files, key=lambda item: len(item.path.parts), reverse=True
-        ):
-            if _identity(_require_regular_file(node.path)) != node.identity:
-                return False
-            node.path.unlink()
-        for node in sorted(
-            directories, key=lambda item: len(item.path.parts), reverse=True
-        ):
-            if _ownership_identity(_require_directory(node.path)) != (
-                node.identity[2],
-                node.identity[3],
-            ):
-                return False
-            node.path.rmdir()
-        if _ownership_identity(_require_directory(quarantine)) != expected_identity:
-            return False
-        quarantine.rmdir()
-        return not os.path.lexists(quarantine)
-    except Exception:
-        return False
-
-
-def _delete_quarantined_file(
-    parent: Path,
-    path: Path,
-    expected_identity: tuple[int, int],
-) -> bool:
-    try:
-        if os.name == "nt":
-            if _ownership_identity(_require_regular_file(path)) != expected_identity:
-                return False
-            path.unlink()
-            return not os.path.lexists(path)
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        parent_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        parent_flags |= getattr(os, "O_NOFOLLOW", 0)
-        parent_descriptor = os.open(parent, parent_flags)
-        try:
-            descriptor = os.open(path.name, flags, dir_fd=parent_descriptor)
-            try:
-                opened = os.fstat(descriptor)
-                if (
-                    not stat.S_ISREG(opened.st_mode)
-                    or _ownership_identity(opened) != expected_identity
-                ):
-                    return False
-                current = os.stat(
-                    path.name,
-                    dir_fd=parent_descriptor,
-                    follow_symlinks=False,
-                )
-                if _identity(current) != _identity(opened):
-                    return False
-                os.unlink(path.name, dir_fd=parent_descriptor)
-                return True
-            finally:
-                os.close(descriptor)
-        finally:
-            os.close(parent_descriptor)
-    except Exception:
-        return False
-
-
-def _delete_quarantined_tree_posix(
-    parent: Path,
-    path: Path,
-    expected_identity: tuple[int, int],
-) -> bool:
-    parent_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    parent_flags |= getattr(os, "O_NOFOLLOW", 0)
-    try:
-        parent_descriptor = os.open(parent, parent_flags)
-        try:
-            descriptor = os.open(path.name, parent_flags, dir_fd=parent_descriptor)
-            try:
-                root_info = os.fstat(descriptor)
-                if (
-                    not stat.S_ISDIR(root_info.st_mode)
-                    or _ownership_identity(root_info) != expected_identity
-                ):
-                    return False
-                _delete_directory_contents_posix(descriptor)
-                current = os.stat(
-                    path.name,
-                    dir_fd=parent_descriptor,
-                    follow_symlinks=False,
-                )
-                if _ownership_identity(current) != expected_identity:
-                    return False
-                os.rmdir(path.name, dir_fd=parent_descriptor)
-                return True
-            finally:
-                os.close(descriptor)
-        finally:
-            os.close(parent_descriptor)
-    except Exception:
-        return False
-
-
-def _delete_directory_contents_posix(descriptor: int) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    with os.scandir(descriptor) as entries:
-        names = [entry.name for entry in entries]
-    for name in names:
-        info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        if stat.S_ISDIR(info.st_mode):
-            quarantine = _quarantine_entry_posix(descriptor, name, info)
-            child = os.open(quarantine, flags, dir_fd=descriptor)
-            try:
-                opened = os.fstat(child)
-                if (
-                    not stat.S_ISDIR(opened.st_mode)
-                    or _identity(opened) != _identity(info)
-                ):
-                    raise ValueError("directory changed during cleanup")
-                _delete_directory_contents_posix(child)
-                current = os.stat(
-                    quarantine, dir_fd=descriptor, follow_symlinks=False
-                )
-                if _ownership_identity(current) != _ownership_identity(opened):
-                    raise ValueError("directory changed during cleanup")
-                os.rmdir(quarantine, dir_fd=descriptor)
-            finally:
-                os.close(child)
-        elif stat.S_ISREG(info.st_mode):
-            quarantine = _quarantine_entry_posix(descriptor, name, info)
-            file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            child = os.open(quarantine, file_flags, dir_fd=descriptor)
-            try:
-                opened = os.fstat(child)
-                if (
-                    not stat.S_ISREG(opened.st_mode)
-                    or _identity(opened) != _identity(info)
-                ):
-                    raise ValueError("file changed during cleanup")
-                current = os.stat(
-                    quarantine, dir_fd=descriptor, follow_symlinks=False
-                )
-                if _identity(current) != _identity(opened):
-                    raise ValueError("file changed during cleanup")
-                os.unlink(quarantine, dir_fd=descriptor)
-            finally:
-                os.close(child)
-        else:
-            raise ValueError("unsafe cleanup entry")
-
-
-def _quarantine_entry_posix(
-    descriptor: int,
-    name: str,
-    expected: os.stat_result,
-) -> str:
-    quarantine: str | None = None
-    for _attempt in range(16):
-        candidate = f".quarantine-{uuid.uuid4().hex}"
-        try:
-            os.stat(candidate, dir_fd=descriptor, follow_symlinks=False)
-        except FileNotFoundError:
-            quarantine = candidate
-            break
-    if quarantine is None:
-        raise ValueError("could not allocate quarantine")
-    try:
-        os.replace(
-            name,
-            quarantine,
-            src_dir_fd=descriptor,
-            dst_dir_fd=descriptor,
-        )
-    except Exception:
-        try:
-            moved = os.stat(
-                quarantine, dir_fd=descriptor, follow_symlinks=False
-            )
-        except FileNotFoundError:
-            raise
-        try:
-            os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        except FileNotFoundError:
-            if _identity(moved) == _identity(expected):
-                return quarantine
-        raise
-    moved = os.stat(quarantine, dir_fd=descriptor, follow_symlinks=False)
-    if _identity(moved) == _identity(expected):
-        return quarantine
-    try:
-        os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-    except FileNotFoundError:
-        try:
-            os.replace(
-                quarantine,
-                name,
-                src_dir_fd=descriptor,
-                dst_dir_fd=descriptor,
-            )
-        except Exception:
-            pass
-    raise ValueError("cleanup entry changed")
 
 
 def _capture_manifest(
@@ -841,24 +599,18 @@ def _rollback_manifest(
 ) -> None:
     rollback_path: Path | None = None
     rollback_identity: tuple[int, int] | None = None
-    published_quarantine: Path | None = None
     try:
         if published_identity is None:
             return
-        published_quarantine = _quarantine_owned(
+        published_retained = _retain_owned(
             root,
             manifest_path,
             published_identity,
             _require_regular_file,
         )
-        if published_quarantine is None:
+        if published_retained is None:
             return
-        if previous_manifest is None:
-            if _delete_quarantined_file(
-                root, published_quarantine, published_identity
-            ):
-                published_quarantine = None
-        else:
+        if previous_manifest is not None:
             for _attempt in range(16):
                 candidate = root / f".manifest-{uuid.uuid4().hex}.tmp"
                 if (
@@ -887,17 +639,6 @@ def _rollback_manifest(
             os.replace(rollback_path, manifest_path)
             rollback_path = None
             rollback_identity = None
-            if (
-                published_quarantine is not None
-                and _ownership_identity(
-                    _require_regular_file(published_quarantine)
-                )
-                == published_identity
-            ):
-                if _delete_quarantined_file(
-                    root, published_quarantine, published_identity
-                ):
-                    published_quarantine = None
         try:
             _fsync_directory(root)
         except OSError:
@@ -905,13 +646,6 @@ def _rollback_manifest(
     except Exception:
         return
     finally:
-        if published_quarantine is not None:
-            try:
-                if not os.path.lexists(manifest_path):
-                    os.replace(published_quarantine, manifest_path)
-                    published_quarantine = None
-            except Exception:
-                pass
         if rollback_path is not None and rollback_identity is not None:
             _cleanup_owned_manifest(root, rollback_path, rollback_identity)
 

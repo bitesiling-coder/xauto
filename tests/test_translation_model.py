@@ -429,6 +429,9 @@ def test_install_download_failure_preserves_current_manifest_and_sentinels(
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert (sentinel / "keep").read_text(encoding="utf-8") == "keep"
     assert not [path for path in tmp_path.glob(".install-*") if path != sentinel]
+    retained = list(tmp_path.glob(".retained-*"))
+    assert len(retained) == 1
+    assert (retained[0] / "partial.bin").read_bytes() == b"partial"
 
 
 def test_install_manifest_fsync_failure_cleans_only_own_temp_and_preserves_current(
@@ -481,6 +484,7 @@ def test_install_post_publish_failure_rolls_back_current_manifest(
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert verify_translation_model(tmp_path).revision == REVISION_A
     assert not list(tmp_path.glob(".manifest-*.tmp"))
+    assert len(list(tmp_path.glob(".retained-*"))) == 1
 
 
 def test_install_rolls_back_when_manifest_replace_succeeds_then_raises(
@@ -512,9 +516,10 @@ def test_install_rolls_back_when_manifest_replace_succeeds_then_raises(
     assert injected is True
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert verify_translation_model(tmp_path).revision == REVISION_A
+    assert len(list(tmp_path.glob(".retained-*"))) == 1
 
 
-def test_install_rollback_recovers_when_quarantine_replace_succeeds_then_raises(
+def test_install_rollback_recovers_when_retained_replace_succeeds_then_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import xrag.translation_model as module
@@ -525,12 +530,12 @@ def test_install_rollback_recovers_when_quarantine_replace_succeeds_then_raises(
     real_fsync_directory = module._fsync_directory
     injected = False
 
-    def ambiguous_quarantine(source: object, destination: object) -> None:
+    def ambiguous_retention(source: object, destination: object) -> None:
         nonlocal injected
         real_replace(source, destination)
         if (
             Path(source).name == "manifest.json"
-            and Path(destination).name.startswith(".quarantine-")
+            and Path(destination).name.startswith(".retained-")
             and not injected
         ):
             injected = True
@@ -541,7 +546,7 @@ def test_install_rollback_recovers_when_quarantine_replace_succeeds_then_raises(
             raise OSError("SECRET post-publish failure")
         real_fsync_directory(path)
 
-    monkeypatch.setattr(module.os, "replace", ambiguous_quarantine)
+    monkeypatch.setattr(module.os, "replace", ambiguous_retention)
     monkeypatch.setattr(module, "_fsync_directory", fail_root_fsync)
 
     with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
@@ -554,7 +559,9 @@ def test_install_rollback_recovers_when_quarantine_replace_succeeds_then_raises(
     assert injected is True
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert verify_translation_model(tmp_path).revision == REVISION_A
-    assert not list(tmp_path.glob(".quarantine-*"))
+    retained = list(tmp_path.glob(".retained-*"))
+    assert len(retained) == 1
+    assert retained[0].is_file()
 
 
 @pytest.mark.parametrize("mutation", ["identity", "content"])
@@ -652,6 +659,9 @@ def test_install_reuses_only_exact_existing_target(tmp_path: Path, same: bool) -
             downloader=_downloader_for({"config.json": b"same"}),
         )
         assert installed.files == (("config.json", _sha(b"same")),)
+        retained = list(tmp_path.glob(".retained-*"))
+        assert len(retained) == 1
+        assert (retained[0] / "config.json").read_bytes() == b"same"
     else:
         with pytest.raises(
             RuntimeError, match="^local translation model unavailable$"
@@ -663,9 +673,12 @@ def test_install_reuses_only_exact_existing_target(tmp_path: Path, same: bool) -
             )
         assert not (tmp_path / "manifest.json").exists()
         assert (tmp_path / "snapshots" / REVISION_A / "config.json").read_bytes() == b"different"
+        retained = list(tmp_path.glob(".retained-*"))
+        assert len(retained) == 1
+        assert (retained[0] / "config.json").read_bytes() == b"same"
 
 
-def test_install_removes_only_safe_download_cache(tmp_path: Path) -> None:
+def test_install_includes_safe_download_cache_in_verified_snapshot(tmp_path: Path) -> None:
     def downloader(**kwargs: object) -> None:
         staging = Path(kwargs["local_dir"])  # type: ignore[arg-type]
         (staging / ".cache" / "huggingface").mkdir(parents=True)
@@ -678,8 +691,38 @@ def test_install_removes_only_safe_download_cache(tmp_path: Path) -> None:
         tmp_path, api=FakeApi(REVISION_A), downloader=downloader
     )
 
-    assert installed.files == (("config.json", _sha(b"{}")),)
-    assert not (installed.snapshot_path / ".cache").exists()
+    assert installed.files == (
+        (".cache/huggingface/meta", _sha(b"cache")),
+        ("config.json", _sha(b"{}")),
+    )
+    assert (installed.snapshot_path / ".cache" / "huggingface" / "meta").read_text(
+        encoding="utf-8"
+    ) == "cache"
+
+
+def test_install_rejects_unsafe_download_cache_and_retains_staging(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.write_text("PRIVATE-KEEP", encoding="utf-8")
+
+    def downloader(**kwargs: object) -> None:
+        staging = Path(kwargs["local_dir"])  # type: ignore[arg-type]
+        cache = staging / ".cache"
+        cache.mkdir()
+        (staging / "config.json").write_bytes(b"{}")
+        _symlink_or_skip(outside, cache / "unsafe-link")
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        install_translation_model(
+            tmp_path, api=FakeApi(REVISION_A), downloader=downloader
+        )
+
+    retained = list(tmp_path.glob(".retained-*"))
+    assert len(retained) == 1
+    assert retained[0].is_dir()
+    assert (retained[0] / ".cache" / "unsafe-link").is_symlink()
+    assert outside.read_text(encoding="utf-8") == "PRIVATE-KEEP"
 
 
 @pytest.mark.parametrize("sha", [None, "A" * 40, "a" * 39, 123])
@@ -735,14 +778,16 @@ def test_staging_cleanup_never_deletes_swapped_unowned_directory(
 
     monkeypatch.setattr(module.os, "replace", swapping_replace)
 
-    module._cleanup_owned_staging(tmp_path, staging, identity)
+    assert module._cleanup_owned_staging(tmp_path, staging, identity) is False
 
     assert swapped is True
-    assert (staging / sentinel.name).read_text(encoding="utf-8") == "keep"
+    retained = list(tmp_path.glob(".retained-*"))
+    assert len(retained) == 1
+    assert (retained[0] / sentinel.name).read_text(encoding="utf-8") == "keep"
     assert (parked / "owned").read_text(encoding="utf-8") == "owned"
 
 
-def test_cache_cleanup_never_deletes_swapped_unowned_directory(
+def test_safe_download_cache_validation_does_not_move_or_delete_entries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import xrag.translation_model as module
@@ -751,30 +796,15 @@ def test_cache_cleanup_never_deletes_swapped_unowned_directory(
     cache = staging / ".cache"
     cache.mkdir(parents=True)
     (cache / "owned").write_text("owned", encoding="utf-8")
-    unowned = tmp_path / "unowned-cache-sentinel"
-    unowned.mkdir()
-    sentinel = unowned / "PRIVATE-KEEP"
-    sentinel.write_text("keep", encoding="utf-8")
-    parked = tmp_path / "parked-owned-cache"
-    real_replace = module.os.replace
-    swapped = False
+    monkeypatch.setattr(
+        module.os,
+        "replace",
+        lambda *_args, **_kwargs: pytest.fail("cache validation must not move files"),
+    )
 
-    def swapping_replace(source: object, destination: object) -> None:
-        nonlocal swapped
-        if Path(source) == cache and not swapped:
-            swapped = True
-            real_replace(cache, parked)
-            real_replace(unowned, cache)
-        real_replace(source, destination)
+    module._validate_download_cache(staging)
 
-    monkeypatch.setattr(module.os, "replace", swapping_replace)
-
-    with pytest.raises(ValueError):
-        module._remove_download_cache(staging)
-
-    assert swapped is True
-    assert (cache / sentinel.name).read_text(encoding="utf-8") == "keep"
-    assert (parked / "owned").read_text(encoding="utf-8") == "owned"
+    assert (cache / "owned").read_text(encoding="utf-8") == "owned"
 
 
 def test_temp_manifest_cleanup_never_deletes_swapped_unowned_file(
@@ -801,69 +831,163 @@ def test_temp_manifest_cleanup_never_deletes_swapped_unowned_file(
 
     monkeypatch.setattr(module.os, "replace", swapping_replace)
 
-    module._cleanup_owned_manifest(tmp_path, temporary, identity)
+    assert module._cleanup_owned_manifest(tmp_path, temporary, identity) is False
 
     assert swapped is True
-    assert temporary.read_text(encoding="utf-8") == "PRIVATE-KEEP"
+    retained = list(tmp_path.glob(".retained-*"))
+    assert len(retained) == 1
+    assert retained[0].read_text(encoding="utf-8") == "PRIVATE-KEEP"
     assert parked.read_text(encoding="utf-8") == "owned"
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX dir_fd cleanup probe")
 @pytest.mark.parametrize("entry_kind", ["file", "directory"])
-def test_posix_recursive_cleanup_quarantines_each_entry_before_delete(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entry_kind: str
+def test_cleanup_retains_entire_owned_tree_without_scanning_other_retained(
+    tmp_path: Path, entry_kind: str
 ) -> None:
     import xrag.translation_model as module
 
     staging = tmp_path / f".install-{'4' * 32}"
     staging.mkdir()
     owned = staging / "owned"
-    unowned = tmp_path / "unowned-entry"
-    parked = tmp_path / "parked-owned-entry"
     if entry_kind == "file":
         owned.write_text("owned", encoding="utf-8")
-        unowned.write_text("PRIVATE-KEEP", encoding="utf-8")
     else:
         owned.mkdir()
         (owned / "payload").write_text("owned", encoding="utf-8")
-        unowned.mkdir()
-        (unowned / "PRIVATE-KEEP").write_text("keep", encoding="utf-8")
+    unrelated = tmp_path / f".retained-{'9' * 32}"
+    unrelated.mkdir()
+    (unrelated / "PRIVATE-KEEP").write_text("keep", encoding="utf-8")
     identity = module._ownership_identity(module._require_directory(staging))
-    real_replace = module.os.replace
-    swapped = False
 
-    def swapping_replace(
-        source: object,
-        destination: object,
-        *args: object,
-        **kwargs: object,
-    ) -> None:
-        nonlocal swapped
-        source_dir = kwargs.get("src_dir_fd")
-        if source == "owned" and isinstance(source_dir, int) and not swapped:
-            swapped = True
-            bound_parent = Path(os.readlink(f"/proc/self/fd/{source_dir}"))
-            real_replace(bound_parent / "owned", parked)
-            real_replace(unowned, bound_parent / "owned")
-        real_replace(source, destination, *args, **kwargs)
+    assert module._cleanup_owned_staging(tmp_path, staging, identity) is True
 
-    monkeypatch.setattr(module.os, "replace", swapping_replace)
-
-    assert module._cleanup_owned_staging(tmp_path, staging, identity) is False
-
-    assert swapped is True
+    retained = [path for path in tmp_path.glob(".retained-*") if path != unrelated]
+    assert len(retained) == 1
     if entry_kind == "file":
-        preserved = [
-            path
-            for path in tmp_path.rglob("*")
-            if path.is_file()
-            and path.read_text(encoding="utf-8") == "PRIVATE-KEEP"
-        ]
-        assert parked.read_text(encoding="utf-8") == "owned"
+        assert (retained[0] / "owned").read_text(encoding="utf-8") == "owned"
     else:
-        preserved = list(tmp_path.rglob("PRIVATE-KEEP"))
-        assert (parked / "payload").read_text(encoding="utf-8") == "owned"
-    assert len(preserved) == 1
+        assert (retained[0] / "owned" / "payload").read_text(
+            encoding="utf-8"
+        ) == "owned"
+    assert (unrelated / "PRIVATE-KEEP").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX final-name swap probe")
+def test_posix_file_final_name_swap_never_deletes_unowned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    staging = tmp_path / f".install-{'5' * 32}"
+    staging.mkdir()
+    (staging / "owned").write_text("owned", encoding="utf-8")
+    unowned = tmp_path / "PRIVATE-KEEP-file"
+    unowned.write_text("keep", encoding="utf-8")
+    parked = tmp_path / "parked-final-file"
+    identity = module._ownership_identity(module._require_directory(staging))
+    real_unlink = module.os.unlink
+    attacked = False
+
+    def swapping_unlink(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal attacked
+        parent_descriptor = kwargs.get("dir_fd")
+        if (
+            isinstance(path, str)
+            and path.startswith(".quarantine-")
+            and isinstance(parent_descriptor, int)
+            and not attacked
+        ):
+            parent = Path(os.readlink(f"/proc/self/fd/{parent_descriptor}"))
+            candidate = parent / path
+            if candidate.is_file():
+                attacked = True
+                os.replace(candidate, parked)
+                os.replace(unowned, candidate)
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "unlink", swapping_unlink)
+
+    module._cleanup_owned_staging(tmp_path, staging, identity)
+
+    assert unowned.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX final-name swap probe")
+def test_posix_child_directory_final_name_swap_never_deletes_unowned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    staging = tmp_path / f".install-{'6' * 32}"
+    (staging / "owned-directory").mkdir(parents=True)
+    unowned = tmp_path / "PRIVATE-KEEP-directory"
+    unowned.mkdir()
+    parked = tmp_path / "parked-final-directory"
+    identity = module._ownership_identity(module._require_directory(staging))
+    real_rmdir = module.os.rmdir
+    attacked = False
+
+    def swapping_rmdir(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal attacked
+        parent_descriptor = kwargs.get("dir_fd")
+        if (
+            isinstance(path, str)
+            and path.startswith(".quarantine-")
+            and isinstance(parent_descriptor, int)
+            and not attacked
+        ):
+            parent = Path(os.readlink(f"/proc/self/fd/{parent_descriptor}"))
+            if parent != tmp_path.resolve():
+                attacked = True
+                candidate = parent / path
+                os.replace(candidate, parked)
+                os.replace(unowned, candidate)
+        real_rmdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "rmdir", swapping_rmdir)
+
+    module._cleanup_owned_staging(tmp_path, staging, identity)
+
+    assert unowned.is_dir()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX final-name swap probe")
+def test_posix_root_final_name_swap_never_deletes_unowned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    staging = tmp_path / f".install-{'7' * 32}"
+    staging.mkdir()
+    unowned = tmp_path / "PRIVATE-KEEP-root"
+    unowned.mkdir()
+    parked = tmp_path / "parked-final-root"
+    identity = module._ownership_identity(module._require_directory(staging))
+    real_rmdir = module.os.rmdir
+    attacked = False
+
+    def swapping_rmdir(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal attacked
+        parent_descriptor = kwargs.get("dir_fd")
+        if (
+            isinstance(path, str)
+            and path.startswith(".quarantine-")
+            and isinstance(parent_descriptor, int)
+            and not attacked
+        ):
+            parent = Path(os.readlink(f"/proc/self/fd/{parent_descriptor}"))
+            if parent == tmp_path.resolve():
+                attacked = True
+                candidate = parent / path
+                os.replace(candidate, parked)
+                os.replace(unowned, candidate)
+        real_rmdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "rmdir", swapping_rmdir)
+
+    module._cleanup_owned_staging(tmp_path, staging, identity)
+
+    assert unowned.is_dir()
 
 
 def _install_fake_runtime(
