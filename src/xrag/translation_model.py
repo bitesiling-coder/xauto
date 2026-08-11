@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
-import shutil
 import stat
 from typing import Any, Callable
 import uuid
@@ -22,6 +21,7 @@ _REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 _HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 _STAGING_PATTERN = re.compile(r"\.install-[0-9a-f]{32}")
 _TEMP_MANIFEST_PATTERN = re.compile(r"\.manifest-[0-9a-f]{32}\.tmp")
+_QUARANTINE_PATTERN = re.compile(r"\.quarantine-[0-9a-f]{32}")
 _MANIFEST_KEYS = {"version", "model_id", "revision", "snapshot", "files"}
 
 
@@ -46,6 +46,21 @@ class InstalledTranslationModel:
             raise ValueError("files must be sorted")
 
 
+@dataclass(frozen=True)
+class _BoundBytes:
+    content: bytes
+    identity: tuple[int, int, int, int]
+    digest: str
+
+
+@dataclass(frozen=True)
+class _TreeNode:
+    kind: str
+    identity: tuple[int, int, int, int]
+    path: Path
+    digest: str | None = None
+
+
 def verify_translation_model(root: Path) -> InstalledTranslationModel:
     try:
         return _verify_translation_model(root)
@@ -58,8 +73,8 @@ def verify_translation_model(root: Path) -> InstalledTranslationModel:
 def _verify_translation_model(root: Path) -> InstalledTranslationModel:
     resolved_root = _existing_safe_root(root)
     manifest_path = resolved_root / "manifest.json"
-    _require_regular_file(manifest_path)
-    manifest = _read_manifest(manifest_path)
+    manifest_source = _read_bound_regular_file(manifest_path)
+    manifest = _parse_manifest(manifest_source.content)
 
     revision = manifest["revision"]
     files = manifest["files"]
@@ -68,18 +83,24 @@ def _verify_translation_model(root: Path) -> InstalledTranslationModel:
     snapshot_path = resolved_root / "snapshots" / revision
 
     _require_directory(resolved_root / "snapshots")
-    _require_directory(snapshot_path)
-    actual_paths = _walk_regular_files(snapshot_path)
-    if set(actual_paths) != set(files):
+    actual_files = _hash_snapshot(snapshot_path)
+    if set(actual_files) != set(files):
         raise ValueError("snapshot file set differs from manifest")
 
     verified: list[tuple[str, str]] = []
     for relative in sorted(files):
         expected_hash = files[relative]
-        actual_hash = _hash_file(actual_paths[relative])
+        actual_hash = actual_files[relative]
         if actual_hash != expected_hash:
             raise ValueError("snapshot file hash differs from manifest")
         verified.append((relative, expected_hash))
+
+    final_manifest = _read_bound_regular_file(manifest_path)
+    if (
+        final_manifest.identity != manifest_source.identity
+        or final_manifest.digest != manifest_source.digest
+    ):
+        raise ValueError("manifest changed during verification")
 
     return InstalledTranslationModel(
         model_id=MODEL_ID,
@@ -89,7 +110,7 @@ def _verify_translation_model(root: Path) -> InstalledTranslationModel:
     )
 
 
-def _read_manifest(path: Path) -> dict[str, Any]:
+def _parse_manifest(raw: bytes) -> dict[str, Any]:
     def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in pairs:
@@ -98,8 +119,7 @@ def _read_manifest(path: Path) -> dict[str, Any]:
             result[key] = value
         return result
 
-    raw = path.read_text(encoding="utf-8")
-    manifest = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
+    manifest = json.loads(raw.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
     if type(manifest) is not dict or set(manifest) != _MANIFEST_KEYS:
         raise ValueError("invalid manifest keys")
     if type(manifest["version"]) is not int or manifest["version"] != MANIFEST_VERSION:
@@ -165,9 +185,9 @@ def _require_regular_file(path: Path) -> os.stat_result:
     return info
 
 
-def _walk_regular_files(root: Path) -> dict[str, Path]:
-    _require_directory(root)
-    files: dict[str, Path] = {}
+def _walk_tree(root: Path, *, hash_files: bool) -> dict[str, _TreeNode]:
+    root_info = _require_directory(root)
+    nodes = {".": _TreeNode("directory", _identity(root_info), root)}
     pending = [root]
     while pending:
         directory = pending.pop()
@@ -179,31 +199,114 @@ def _walk_regular_files(root: Path) -> dict[str, Path]:
                 if stat.S_ISLNK(info.st_mode) or _is_reparse(path, info):
                     raise ValueError("unsafe snapshot entry")
                 if stat.S_ISDIR(info.st_mode):
+                    relative = path.relative_to(root).as_posix()
+                    nodes[relative] = _TreeNode("directory", _identity(info), path)
                     pending.append(path)
                 elif stat.S_ISREG(info.st_mode):
                     relative = path.relative_to(root).as_posix()
                     _validate_relative_path(relative)
-                    files[relative] = path
+                    digest = _hash_file(path) if hash_files else None
+                    after = _require_regular_file(path)
+                    if _identity(info) != _identity(after):
+                        raise ValueError("snapshot entry changed")
+                    nodes[relative] = _TreeNode(
+                        "file", _identity(after), path, digest
+                    )
                 else:
                     raise ValueError("special snapshot entry")
-    return files
+    for relative in sorted(
+        nodes, key=lambda value: len(PurePosixPath(value).parts), reverse=True
+    ):
+        node = nodes[relative]
+        if node.kind == "directory":
+            current = _require_directory(node.path)
+        else:
+            current = _require_regular_file(node.path)
+        if _identity(current) != node.identity:
+            raise ValueError("snapshot entry changed")
+    return nodes
+
+
+def _same_tree(first: dict[str, _TreeNode], second: dict[str, _TreeNode]) -> bool:
+    return set(first) == set(second) and all(
+        first[name].kind == second[name].kind
+        and first[name].identity == second[name].identity
+        for name in first
+    )
 
 
 def _hash_file(path: Path) -> str:
     before = _require_regular_file(path)
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        opened = os.fstat(source.fileno())
-        if not stat.S_ISREG(opened.st_mode) or _is_reparse(path, opened):
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or _is_reparse(path, opened)
+            or _identity(before) != _identity(opened)
+        ):
             raise ValueError("unsafe opened file")
-        if _identity(before) != _identity(opened):
-            raise ValueError("file changed before hashing")
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    after = _require_regular_file(path)
-    if _identity(before) != _identity(after):
-        raise ValueError("file changed while hashing")
-    return digest.hexdigest()
+        digest = hashlib.sha256()
+        with os.fdopen(descriptor, "rb") as source:
+            descriptor = -1
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+            final_handle = os.fstat(source.fileno())
+        after = _require_regular_file(path)
+        if (
+            _identity(opened) != _identity(final_handle)
+            or _identity(opened) != _identity(after)
+        ):
+            raise ValueError("file changed while hashing")
+        return digest.hexdigest()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _read_handle_bytes(source: Any) -> bytes:
+    chunks: list[bytes] = []
+    while chunk := source.read(1024 * 1024):
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _read_bound_regular_file(path: Path) -> _BoundBytes:
+    before = _require_regular_file(path)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or _is_reparse(path, opened)
+            or _identity(before) != _identity(opened)
+        ):
+            raise ValueError("unsafe opened file")
+        with os.fdopen(descriptor, "rb") as source:
+            descriptor = -1
+            content = _read_handle_bytes(source)
+            source.seek(0)
+            confirmed_content = _read_handle_bytes(source)
+            final_handle = os.fstat(source.fileno())
+        after = _require_regular_file(path)
+        if (
+            confirmed_content != content
+            or _identity(opened) != _identity(final_handle)
+            or _identity(opened) != _identity(after)
+        ):
+            raise ValueError("file changed while reading")
+        return _BoundBytes(
+            content=content,
+            identity=_identity(opened),
+            digest=hashlib.sha256(content).hexdigest(),
+        )
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _identity(info: os.stat_result) -> tuple[int, int, int, int]:
@@ -321,10 +424,10 @@ def _install_translation_model_transaction(
         elif _identity(_require_regular_file(manifest_path)) != previous_identity:
             raise ValueError("manifest changed before publication")
         published_identity = temporary_manifest_identity
-        os.replace(temporary_manifest, manifest_path)
-        temporary_manifest = None
-        temporary_manifest_identity = None
         try:
+            os.replace(temporary_manifest, manifest_path)
+            temporary_manifest = None
+            temporary_manifest_identity = None
             _fsync_directory(resolved_root)
             return verify_translation_model(resolved_root)
         except BaseException:
@@ -379,16 +482,24 @@ def _remove_download_cache(staging: Path) -> None:
         return
     if cache.parent != staging or cache.name != ".cache":
         raise ValueError("unsafe cache path")
-    _require_directory(cache)
-    _walk_regular_files(cache)
-    shutil.rmtree(cache)
+    expected = _ownership_identity(_require_directory(cache))
+    if not _quarantine_and_delete_directory(staging, cache, expected):
+        raise ValueError("could not safely clean download cache")
 
 
 def _hash_snapshot(snapshot: Path) -> dict[str, str]:
-    paths = _walk_regular_files(snapshot)
-    if not paths:
+    first = _walk_tree(snapshot, hash_files=True)
+    second = _walk_tree(snapshot, hash_files=False)
+    if not _same_tree(first, second):
+        raise ValueError("snapshot changed during verification")
+    files = {
+        relative: node.digest
+        for relative, node in first.items()
+        if node.kind == "file"
+    }
+    if not files or any(digest is None for digest in files.values()):
         raise ValueError("empty snapshot")
-    return {relative: _hash_file(paths[relative]) for relative in sorted(paths)}
+    return {relative: files[relative] for relative in sorted(files)}  # type: ignore[return-value]
 
 
 def _cleanup_owned_staging(
@@ -403,12 +514,9 @@ def _cleanup_owned_staging(
             or not os.path.lexists(staging)
         ):
             return False
-        info = _require_directory(staging)
-        if _ownership_identity(info) != expected_identity:
-            return False
-        _walk_regular_files(staging)
-        shutil.rmtree(staging)
-        return not os.path.lexists(staging)
+        return _quarantine_and_delete_directory(
+            root, staging, expected_identity
+        )
     except Exception:
         return False
 
@@ -417,19 +525,303 @@ def _cleanup_owned_manifest(
     root: Path,
     path: Path,
     expected_identity: tuple[int, int],
-) -> None:
+) -> bool:
     try:
         if (
             path.parent != root
             or _TEMP_MANIFEST_PATTERN.fullmatch(path.name) is None
             or not os.path.lexists(path)
         ):
-            return
-        info = _require_regular_file(path)
-        if _ownership_identity(info) == expected_identity:
-            path.unlink()
+            return False
+        quarantine = _quarantine_owned(
+            root, path, expected_identity, _require_regular_file
+        )
+        if quarantine is None:
+            return False
+        info = _require_regular_file(quarantine)
+        if _ownership_identity(info) != expected_identity:
+            return False
+        return _delete_quarantined_file(
+            root, quarantine, expected_identity
+        )
     except Exception:
-        return
+        return False
+
+
+def _new_quarantine(parent: Path) -> Path:
+    for _attempt in range(16):
+        candidate = parent / f".quarantine-{uuid.uuid4().hex}"
+        if (
+            candidate.parent == parent
+            and _QUARANTINE_PATTERN.fullmatch(candidate.name) is not None
+            and not os.path.lexists(candidate)
+        ):
+            return candidate
+    raise ValueError("could not allocate quarantine")
+
+
+def _quarantine_owned(
+    parent: Path,
+    path: Path,
+    expected_identity: tuple[int, int],
+    require: Callable[[Path], os.stat_result],
+) -> Path | None:
+    if path.parent != parent or not os.path.lexists(path):
+        return None
+    quarantine = _new_quarantine(parent)
+    try:
+        os.replace(path, quarantine)
+    except Exception:
+        try:
+            moved = require(quarantine)
+            if (
+                _ownership_identity(moved) == expected_identity
+                and not os.path.lexists(path)
+            ):
+                return quarantine
+        except Exception:
+            pass
+        raise
+    try:
+        moved = require(quarantine)
+        if _ownership_identity(moved) == expected_identity:
+            return quarantine
+    except Exception:
+        pass
+    try:
+        if not os.path.lexists(path) and os.path.lexists(quarantine):
+            os.replace(quarantine, path)
+    except Exception:
+        pass
+    return None
+
+
+def _quarantine_and_delete_directory(
+    parent: Path,
+    path: Path,
+    expected_identity: tuple[int, int],
+) -> bool:
+    quarantine = _quarantine_owned(
+        parent, path, expected_identity, _require_directory
+    )
+    if quarantine is None:
+        return False
+    if os.name != "nt":
+        return _delete_quarantined_tree_posix(
+            parent, quarantine, expected_identity
+        )
+    try:
+        tree = _walk_tree(quarantine, hash_files=False)
+        if _ownership_identity(_require_directory(quarantine)) != expected_identity:
+            return False
+        files = [
+            node for node in tree.values() if node.kind == "file"
+        ]
+        directories = [
+            node
+            for relative, node in tree.items()
+            if node.kind == "directory" and relative != "."
+        ]
+        for node in sorted(
+            files, key=lambda item: len(item.path.parts), reverse=True
+        ):
+            if _identity(_require_regular_file(node.path)) != node.identity:
+                return False
+            node.path.unlink()
+        for node in sorted(
+            directories, key=lambda item: len(item.path.parts), reverse=True
+        ):
+            if _ownership_identity(_require_directory(node.path)) != (
+                node.identity[2],
+                node.identity[3],
+            ):
+                return False
+            node.path.rmdir()
+        if _ownership_identity(_require_directory(quarantine)) != expected_identity:
+            return False
+        quarantine.rmdir()
+        return not os.path.lexists(quarantine)
+    except Exception:
+        return False
+
+
+def _delete_quarantined_file(
+    parent: Path,
+    path: Path,
+    expected_identity: tuple[int, int],
+) -> bool:
+    try:
+        if os.name == "nt":
+            if _ownership_identity(_require_regular_file(path)) != expected_identity:
+                return False
+            path.unlink()
+            return not os.path.lexists(path)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        parent_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        parent_flags |= getattr(os, "O_NOFOLLOW", 0)
+        parent_descriptor = os.open(parent, parent_flags)
+        try:
+            descriptor = os.open(path.name, flags, dir_fd=parent_descriptor)
+            try:
+                opened = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(opened.st_mode)
+                    or _ownership_identity(opened) != expected_identity
+                ):
+                    return False
+                current = os.stat(
+                    path.name,
+                    dir_fd=parent_descriptor,
+                    follow_symlinks=False,
+                )
+                if _identity(current) != _identity(opened):
+                    return False
+                os.unlink(path.name, dir_fd=parent_descriptor)
+                return True
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(parent_descriptor)
+    except Exception:
+        return False
+
+
+def _delete_quarantined_tree_posix(
+    parent: Path,
+    path: Path,
+    expected_identity: tuple[int, int],
+) -> bool:
+    parent_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    parent_flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        parent_descriptor = os.open(parent, parent_flags)
+        try:
+            descriptor = os.open(path.name, parent_flags, dir_fd=parent_descriptor)
+            try:
+                root_info = os.fstat(descriptor)
+                if (
+                    not stat.S_ISDIR(root_info.st_mode)
+                    or _ownership_identity(root_info) != expected_identity
+                ):
+                    return False
+                _delete_directory_contents_posix(descriptor)
+                current = os.stat(
+                    path.name,
+                    dir_fd=parent_descriptor,
+                    follow_symlinks=False,
+                )
+                if _ownership_identity(current) != expected_identity:
+                    return False
+                os.rmdir(path.name, dir_fd=parent_descriptor)
+                return True
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(parent_descriptor)
+    except Exception:
+        return False
+
+
+def _delete_directory_contents_posix(descriptor: int) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    with os.scandir(descriptor) as entries:
+        names = [entry.name for entry in entries]
+    for name in names:
+        info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISDIR(info.st_mode):
+            quarantine = _quarantine_entry_posix(descriptor, name, info)
+            child = os.open(quarantine, flags, dir_fd=descriptor)
+            try:
+                opened = os.fstat(child)
+                if (
+                    not stat.S_ISDIR(opened.st_mode)
+                    or _identity(opened) != _identity(info)
+                ):
+                    raise ValueError("directory changed during cleanup")
+                _delete_directory_contents_posix(child)
+                current = os.stat(
+                    quarantine, dir_fd=descriptor, follow_symlinks=False
+                )
+                if _ownership_identity(current) != _ownership_identity(opened):
+                    raise ValueError("directory changed during cleanup")
+                os.rmdir(quarantine, dir_fd=descriptor)
+            finally:
+                os.close(child)
+        elif stat.S_ISREG(info.st_mode):
+            quarantine = _quarantine_entry_posix(descriptor, name, info)
+            file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            child = os.open(quarantine, file_flags, dir_fd=descriptor)
+            try:
+                opened = os.fstat(child)
+                if (
+                    not stat.S_ISREG(opened.st_mode)
+                    or _identity(opened) != _identity(info)
+                ):
+                    raise ValueError("file changed during cleanup")
+                current = os.stat(
+                    quarantine, dir_fd=descriptor, follow_symlinks=False
+                )
+                if _identity(current) != _identity(opened):
+                    raise ValueError("file changed during cleanup")
+                os.unlink(quarantine, dir_fd=descriptor)
+            finally:
+                os.close(child)
+        else:
+            raise ValueError("unsafe cleanup entry")
+
+
+def _quarantine_entry_posix(
+    descriptor: int,
+    name: str,
+    expected: os.stat_result,
+) -> str:
+    quarantine: str | None = None
+    for _attempt in range(16):
+        candidate = f".quarantine-{uuid.uuid4().hex}"
+        try:
+            os.stat(candidate, dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            quarantine = candidate
+            break
+    if quarantine is None:
+        raise ValueError("could not allocate quarantine")
+    try:
+        os.replace(
+            name,
+            quarantine,
+            src_dir_fd=descriptor,
+            dst_dir_fd=descriptor,
+        )
+    except Exception:
+        try:
+            moved = os.stat(
+                quarantine, dir_fd=descriptor, follow_symlinks=False
+            )
+        except FileNotFoundError:
+            raise
+        try:
+            os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            if _identity(moved) == _identity(expected):
+                return quarantine
+        raise
+    moved = os.stat(quarantine, dir_fd=descriptor, follow_symlinks=False)
+    if _identity(moved) == _identity(expected):
+        return quarantine
+    try:
+        os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        try:
+            os.replace(
+                quarantine,
+                name,
+                src_dir_fd=descriptor,
+                dst_dir_fd=descriptor,
+            )
+        except Exception:
+            pass
+    raise ValueError("cleanup entry changed")
 
 
 def _capture_manifest(
@@ -437,12 +829,8 @@ def _capture_manifest(
 ) -> tuple[bytes | None, tuple[int, int, int, int] | None]:
     if not os.path.lexists(path):
         return None, None
-    before = _require_regular_file(path)
-    contents = path.read_bytes()
-    after = _require_regular_file(path)
-    if _identity(before) != _identity(after):
-        raise ValueError("manifest changed while reading")
-    return contents, _identity(after)
+    captured = _read_bound_regular_file(path)
+    return captured.content, captured.identity
 
 
 def _rollback_manifest(
@@ -453,14 +841,23 @@ def _rollback_manifest(
 ) -> None:
     rollback_path: Path | None = None
     rollback_identity: tuple[int, int] | None = None
+    published_quarantine: Path | None = None
     try:
         if published_identity is None:
             return
-        current = _require_regular_file(manifest_path)
-        if _ownership_identity(current) != published_identity:
+        published_quarantine = _quarantine_owned(
+            root,
+            manifest_path,
+            published_identity,
+            _require_regular_file,
+        )
+        if published_quarantine is None:
             return
         if previous_manifest is None:
-            manifest_path.unlink()
+            if _delete_quarantined_file(
+                root, published_quarantine, published_identity
+            ):
+                published_quarantine = None
         else:
             for _attempt in range(16):
                 candidate = root / f".manifest-{uuid.uuid4().hex}.tmp"
@@ -485,12 +882,22 @@ def _rollback_manifest(
                 break
             if rollback_path is None:
                 return
-            current = _require_regular_file(manifest_path)
-            if _ownership_identity(current) != published_identity:
+            if os.path.lexists(manifest_path):
                 return
             os.replace(rollback_path, manifest_path)
             rollback_path = None
             rollback_identity = None
+            if (
+                published_quarantine is not None
+                and _ownership_identity(
+                    _require_regular_file(published_quarantine)
+                )
+                == published_identity
+            ):
+                if _delete_quarantined_file(
+                    root, published_quarantine, published_identity
+                ):
+                    published_quarantine = None
         try:
             _fsync_directory(root)
         except OSError:
@@ -498,6 +905,13 @@ def _rollback_manifest(
     except Exception:
         return
     finally:
+        if published_quarantine is not None:
+            try:
+                if not os.path.lexists(manifest_path):
+                    os.replace(published_quarantine, manifest_path)
+                    published_quarantine = None
+            except Exception:
+                pass
         if rollback_path is not None and rollback_identity is not None:
             _cleanup_owned_manifest(root, rollback_path, rollback_identity)
 
@@ -517,7 +931,9 @@ class TransformersTranslationEngine:
     def __init__(self, model_root: Path) -> None:
         self._model_root = Path(model_root)
         self._installed: InstalledTranslationModel | None = None
-        self._fingerprint: tuple[tuple[str, int, int, int, int], ...] | None = None
+        self._fingerprint: tuple[
+            tuple[str, str, int, int, int, int], ...
+        ] | None = None
         self._tokenizer: object | None = None
         self._model: object | None = None
 
@@ -624,25 +1040,24 @@ class TransformersTranslationEngine:
 
 def _model_fingerprint(
     installed: InstalledTranslationModel,
-) -> tuple[tuple[str, int, int, int, int], ...]:
+) -> tuple[tuple[str, str, int, int, int, int], ...]:
     root = installed.snapshot_path.parents[1]
-    entries: list[tuple[str, int, int, int, int]] = []
+    entries: list[tuple[str, str, int, int, int, int]] = []
 
-    def add(label: str, path: Path, require: Callable[[Path], os.stat_result]) -> None:
+    def add(
+        label: str,
+        kind: str,
+        path: Path,
+        require: Callable[[Path], os.stat_result],
+    ) -> None:
         size, mtime_ns, device, inode = _identity(require(path))
-        entries.append((label, size, mtime_ns, device, inode))
+        entries.append((label, kind, device, inode, size, mtime_ns))
 
-    add("manifest.json", root / "manifest.json", _require_regular_file)
-    add("snapshots", root / "snapshots", _require_directory)
-    add(f"snapshots/{installed.revision}", installed.snapshot_path, _require_directory)
-    directories: set[str] = set()
-    for relative, _digest in installed.files:
-        parent = PurePosixPath(relative).parent
-        while str(parent) != ".":
-            directories.add(parent.as_posix())
-            parent = parent.parent
-    for relative in sorted(directories):
-        add(f"dir:{relative}", installed.snapshot_path.joinpath(*relative.split("/")), _require_directory)
-    for relative, _digest in installed.files:
-        add(relative, installed.snapshot_path.joinpath(*relative.split("/")), _require_regular_file)
+    add("manifest.json", "file", root / "manifest.json", _require_regular_file)
+    add("snapshots", "directory", root / "snapshots", _require_directory)
+    tree = _walk_tree(installed.snapshot_path, hash_files=False)
+    for relative in sorted(tree):
+        node = tree[relative]
+        size, mtime_ns, device, inode = node.identity
+        entries.append((relative, node.kind, device, inode, size, mtime_ns))
     return tuple(entries)

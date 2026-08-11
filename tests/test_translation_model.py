@@ -244,7 +244,10 @@ def test_verify_rejects_simulated_windows_reparse_point(
 def test_verify_rejects_special_file(tmp_path: Path) -> None:
     hashes = _write_snapshot(tmp_path)
     fifo = tmp_path / "snapshots" / REVISION_A / "pipe"
-    os.mkfifo(fifo)
+    try:
+        os.mkfifo(fifo)
+    except OSError as exc:
+        pytest.skip(f"filesystem does not support FIFO test fixture: {exc.errno}")
     hashes["pipe"] = "0" * 64
     _write_manifest(tmp_path, REVISION_A, hashes)
 
@@ -262,6 +265,80 @@ def test_verification_errors_redact_paths_and_manifest_content(tmp_path: Path) -
     assert str(caught.value) == "local translation model unavailable"
     assert secret not in str(caught.value)
     assert str(tmp_path) not in str(caught.value)
+
+
+@pytest.mark.parametrize("mutation", ["identity", "content"])
+def test_verify_binds_manifest_handle_to_final_path_and_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    import xrag.translation_model as module
+
+    _write_snapshot(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    original_bytes = manifest.read_bytes()
+    original_stat = manifest.stat()
+    replacement = tmp_path / "replacement-manifest.json"
+    replacement.write_bytes(original_bytes)
+    real_read = module._read_handle_bytes
+    swapped = False
+
+    def swapping_read(source: object) -> bytes:
+        nonlocal swapped
+        data = real_read(source)
+        if not swapped:
+            swapped = True
+            if mutation == "identity":
+                os.replace(replacement, manifest)
+            else:
+                changed = original_bytes.replace(b" ", b"\t", 1)
+                assert changed != original_bytes and len(changed) == len(original_bytes)
+                manifest.write_bytes(changed)
+                os.utime(
+                    manifest,
+                    ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+                )
+        return data
+
+    monkeypatch.setattr(module, "_read_handle_bytes", swapping_read)
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        verify_translation_model(tmp_path)
+
+
+@pytest.mark.parametrize("swap_kind", ["file", "directory"])
+def test_verify_rechecks_entire_tree_after_hashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, swap_kind: str
+) -> None:
+    import xrag.translation_model as module
+
+    _write_snapshot(tmp_path, files={"nested/config.json": b"same"})
+    snapshot = tmp_path / "snapshots" / REVISION_A
+    real_hash = module._hash_file
+    swapped = False
+
+    def swapping_hash(path: Path) -> str:
+        nonlocal swapped
+        digest = real_hash(path)
+        if not swapped:
+            swapped = True
+            if swap_kind == "file":
+                replacement = tmp_path / "replacement-file"
+                replacement.write_bytes(path.read_bytes())
+                os.replace(replacement, path)
+            else:
+                original = snapshot / "nested"
+                parked = tmp_path / "parked-original-directory"
+                replacement = tmp_path / "replacement-directory"
+                replacement.mkdir()
+                (replacement / "config.json").write_bytes(b"same")
+                os.replace(original, parked)
+                os.replace(replacement, original)
+        return digest
+
+    monkeypatch.setattr(module, "_hash_file", swapping_hash)
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        verify_translation_model(tmp_path)
 
 
 def test_install_pins_revision_publishes_manifest_last_and_roundtrips(
@@ -406,6 +483,120 @@ def test_install_post_publish_failure_rolls_back_current_manifest(
     assert not list(tmp_path.glob(".manifest-*.tmp"))
 
 
+def test_install_rolls_back_when_manifest_replace_succeeds_then_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    _write_snapshot(tmp_path, REVISION_A)
+    manifest_before = (tmp_path / "manifest.json").read_bytes()
+    real_replace = module.os.replace
+    injected = False
+
+    def replace_then_fail(source: object, destination: object) -> None:
+        nonlocal injected
+        real_replace(source, destination)
+        if Path(destination).name == "manifest.json" and not injected:
+            injected = True
+            raise OSError("SECRET replace completion ambiguity")
+
+    monkeypatch.setattr(module.os, "replace", replace_then_fail)
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        install_translation_model(
+            tmp_path,
+            api=FakeApi(REVISION_B),
+            downloader=_downloader_for({"config.json": b"new"}),
+        )
+
+    assert injected is True
+    assert (tmp_path / "manifest.json").read_bytes() == manifest_before
+    assert verify_translation_model(tmp_path).revision == REVISION_A
+
+
+def test_install_rollback_recovers_when_quarantine_replace_succeeds_then_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    _write_snapshot(tmp_path, REVISION_A)
+    manifest_before = (tmp_path / "manifest.json").read_bytes()
+    real_replace = module.os.replace
+    real_fsync_directory = module._fsync_directory
+    injected = False
+
+    def ambiguous_quarantine(source: object, destination: object) -> None:
+        nonlocal injected
+        real_replace(source, destination)
+        if (
+            Path(source).name == "manifest.json"
+            and Path(destination).name.startswith(".quarantine-")
+            and not injected
+        ):
+            injected = True
+            raise OSError("SECRET rollback rename ambiguity")
+
+    def fail_root_fsync(path: Path) -> None:
+        if Path(path) == tmp_path.resolve():
+            raise OSError("SECRET post-publish failure")
+        real_fsync_directory(path)
+
+    monkeypatch.setattr(module.os, "replace", ambiguous_quarantine)
+    monkeypatch.setattr(module, "_fsync_directory", fail_root_fsync)
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        install_translation_model(
+            tmp_path,
+            api=FakeApi(REVISION_B),
+            downloader=_downloader_for({"config.json": b"new"}),
+        )
+
+    assert injected is True
+    assert (tmp_path / "manifest.json").read_bytes() == manifest_before
+    assert verify_translation_model(tmp_path).revision == REVISION_A
+    assert not list(tmp_path.glob(".quarantine-*"))
+
+
+@pytest.mark.parametrize("mutation", ["identity", "content"])
+def test_capture_manifest_rejects_path_swap_after_bound_handle_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    import xrag.translation_model as module
+
+    _write_snapshot(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    original_bytes = manifest.read_bytes()
+    original_stat = manifest.stat()
+    replacement = tmp_path / "replacement-manifest"
+    replacement.write_bytes(original_bytes)
+    real_read = module._read_handle_bytes
+    swapped = False
+
+    def swapping_read(source: object) -> bytes:
+        nonlocal swapped
+        data = real_read(source)
+        if not swapped:
+            swapped = True
+            if mutation == "identity":
+                os.replace(replacement, manifest)
+            else:
+                changed = original_bytes.replace(b" ", b"\t", 1)
+                assert changed != original_bytes and len(changed) == len(original_bytes)
+                manifest.write_bytes(changed)
+                os.utime(
+                    manifest,
+                    ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+                )
+        return data
+
+    monkeypatch.setattr(module, "_read_handle_bytes", swapping_read)
+
+    with pytest.raises((ValueError, OSError)):
+        module._capture_manifest(manifest)
+
+    assert swapped is True
+
+
 def test_install_holds_per_root_writer_lock_across_all_replacements(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -515,6 +706,164 @@ def test_install_rejects_symlink_root(tmp_path: Path) -> None:
             api=FakeApi(REVISION_A),
             downloader=lambda **_kwargs: pytest.fail("downloader must not run"),
         )
+
+
+def test_staging_cleanup_never_deletes_swapped_unowned_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    staging = tmp_path / f".install-{'1' * 32}"
+    staging.mkdir()
+    (staging / "owned").write_text("owned", encoding="utf-8")
+    identity = module._ownership_identity(module._require_directory(staging))
+    unowned = tmp_path / "unowned-staging-sentinel"
+    unowned.mkdir()
+    sentinel = unowned / "PRIVATE-KEEP"
+    sentinel.write_text("keep", encoding="utf-8")
+    parked = tmp_path / "parked-owned-staging"
+    real_replace = module.os.replace
+    swapped = False
+
+    def swapping_replace(source: object, destination: object) -> None:
+        nonlocal swapped
+        if Path(source) == staging and not swapped:
+            swapped = True
+            real_replace(staging, parked)
+            real_replace(unowned, staging)
+        real_replace(source, destination)
+
+    monkeypatch.setattr(module.os, "replace", swapping_replace)
+
+    module._cleanup_owned_staging(tmp_path, staging, identity)
+
+    assert swapped is True
+    assert (staging / sentinel.name).read_text(encoding="utf-8") == "keep"
+    assert (parked / "owned").read_text(encoding="utf-8") == "owned"
+
+
+def test_cache_cleanup_never_deletes_swapped_unowned_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    staging = tmp_path / f".install-{'2' * 32}"
+    cache = staging / ".cache"
+    cache.mkdir(parents=True)
+    (cache / "owned").write_text("owned", encoding="utf-8")
+    unowned = tmp_path / "unowned-cache-sentinel"
+    unowned.mkdir()
+    sentinel = unowned / "PRIVATE-KEEP"
+    sentinel.write_text("keep", encoding="utf-8")
+    parked = tmp_path / "parked-owned-cache"
+    real_replace = module.os.replace
+    swapped = False
+
+    def swapping_replace(source: object, destination: object) -> None:
+        nonlocal swapped
+        if Path(source) == cache and not swapped:
+            swapped = True
+            real_replace(cache, parked)
+            real_replace(unowned, cache)
+        real_replace(source, destination)
+
+    monkeypatch.setattr(module.os, "replace", swapping_replace)
+
+    with pytest.raises(ValueError):
+        module._remove_download_cache(staging)
+
+    assert swapped is True
+    assert (cache / sentinel.name).read_text(encoding="utf-8") == "keep"
+    assert (parked / "owned").read_text(encoding="utf-8") == "owned"
+
+
+def test_temp_manifest_cleanup_never_deletes_swapped_unowned_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    temporary = tmp_path / f".manifest-{'3' * 32}.tmp"
+    temporary.write_text("owned", encoding="utf-8")
+    identity = module._ownership_identity(module._require_regular_file(temporary))
+    unowned = tmp_path / "unowned-manifest-sentinel"
+    unowned.write_text("PRIVATE-KEEP", encoding="utf-8")
+    parked = tmp_path / "parked-owned-manifest"
+    real_replace = module.os.replace
+    swapped = False
+
+    def swapping_replace(source: object, destination: object) -> None:
+        nonlocal swapped
+        if Path(source) == temporary and not swapped:
+            swapped = True
+            real_replace(temporary, parked)
+            real_replace(unowned, temporary)
+        real_replace(source, destination)
+
+    monkeypatch.setattr(module.os, "replace", swapping_replace)
+
+    module._cleanup_owned_manifest(tmp_path, temporary, identity)
+
+    assert swapped is True
+    assert temporary.read_text(encoding="utf-8") == "PRIVATE-KEEP"
+    assert parked.read_text(encoding="utf-8") == "owned"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX dir_fd cleanup probe")
+@pytest.mark.parametrize("entry_kind", ["file", "directory"])
+def test_posix_recursive_cleanup_quarantines_each_entry_before_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entry_kind: str
+) -> None:
+    import xrag.translation_model as module
+
+    staging = tmp_path / f".install-{'4' * 32}"
+    staging.mkdir()
+    owned = staging / "owned"
+    unowned = tmp_path / "unowned-entry"
+    parked = tmp_path / "parked-owned-entry"
+    if entry_kind == "file":
+        owned.write_text("owned", encoding="utf-8")
+        unowned.write_text("PRIVATE-KEEP", encoding="utf-8")
+    else:
+        owned.mkdir()
+        (owned / "payload").write_text("owned", encoding="utf-8")
+        unowned.mkdir()
+        (unowned / "PRIVATE-KEEP").write_text("keep", encoding="utf-8")
+    identity = module._ownership_identity(module._require_directory(staging))
+    real_replace = module.os.replace
+    swapped = False
+
+    def swapping_replace(
+        source: object,
+        destination: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal swapped
+        source_dir = kwargs.get("src_dir_fd")
+        if source == "owned" and isinstance(source_dir, int) and not swapped:
+            swapped = True
+            bound_parent = Path(os.readlink(f"/proc/self/fd/{source_dir}"))
+            real_replace(bound_parent / "owned", parked)
+            real_replace(unowned, bound_parent / "owned")
+        real_replace(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "replace", swapping_replace)
+
+    assert module._cleanup_owned_staging(tmp_path, staging, identity) is False
+
+    assert swapped is True
+    if entry_kind == "file":
+        preserved = [
+            path
+            for path in tmp_path.rglob("*")
+            if path.is_file()
+            and path.read_text(encoding="utf-8") == "PRIVATE-KEEP"
+        ]
+        assert parked.read_text(encoding="utf-8") == "owned"
+    else:
+        preserved = list(tmp_path.rglob("PRIVATE-KEEP"))
+        assert (parked / "payload").read_text(encoding="utf-8") == "owned"
+    assert len(preserved) == 1
 
 
 def _install_fake_runtime(
@@ -690,7 +1039,7 @@ def test_engine_preflight_caches_only_unchanged_verified_files(
     assert calls == 1
 
     config = tmp_path / "snapshots" / REVISION_A / "config.json"
-    config.write_bytes(b"!!")
+    config.write_bytes(b"tampered")
     with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
         engine.preflight()
     assert calls == 2
@@ -725,6 +1074,33 @@ def test_engine_force_verifies_again_immediately_before_first_load(
     assert calls == 2
 
 
+def test_engine_fingerprint_tracks_empty_directories_and_rejects_new_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    _write_snapshot(tmp_path)
+    empty = tmp_path / "snapshots" / REVISION_A / "empty"
+    empty.mkdir()
+    real_verify = module.verify_translation_model
+    calls = 0
+
+    def counting_verify(root: Path) -> InstalledTranslationModel:
+        nonlocal calls
+        calls += 1
+        return real_verify(root)
+
+    monkeypatch.setattr(module, "verify_translation_model", counting_verify)
+    engine = TransformersTranslationEngine(tmp_path)
+    engine.preflight()
+    (empty / "PRIVATE-extra.bin").write_bytes(b"extra")
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        engine.preflight()
+
+    assert calls == 2
+
+
 def test_engine_loaded_model_uses_memory_when_disk_metadata_appears_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -736,9 +1112,15 @@ def test_engine_loaded_model_uses_memory_when_disk_metadata_appears_unchanged(
     assert engine.translate_many(["first"]) == ["memory result"]
 
     config = tmp_path / "snapshots" / REVISION_A / "config.json"
+    snapshot = config.parent
     original = config.stat()
+    original_snapshot = snapshot.stat()
     config.write_bytes(b"evil")
     os.utime(config, ns=(original.st_atime_ns, original.st_mtime_ns))
+    os.utime(
+        snapshot,
+        ns=(original_snapshot.st_atime_ns, original_snapshot.st_mtime_ns),
+    )
     monkeypatch.setattr(
         module,
         "_hash_file",
