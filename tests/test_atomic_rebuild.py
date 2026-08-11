@@ -272,9 +272,14 @@ def test_translate_all_permits_hash_from_its_own_markdown_upsert(tmp_path: Path)
     assert markdown.get("a").source_type == "translated"
 
 
-def test_translate_all_rejects_unexpected_markdown_byte_change(tmp_path: Path) -> None:
+def test_translate_all_rejects_unexpected_markdown_byte_change_before_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     markdown = MarkdownStore(tmp_path / "data/markdown")
     add_post(markdown, "a")
+    stable = tmp_path / "data/chroma"
+    stable.mkdir(parents=True)
+    (stable / "old-sentinel").write_bytes(b"old")
 
     class MutatingTranslation:
         def preflight(self) -> None:
@@ -292,9 +297,48 @@ def test_translate_all_rejects_unexpected_markdown_byte_change(tmp_path: Path) -
         configuration(tmp_path), object(), markdown, None,
         rebuild_factory=StagingStore, translation=MutatingTranslation(),
     )
+    rebuild_calls = 0
+    original_rebuild = service._rebuild_atomic
+
+    def observed_rebuild() -> dict[str, int]:
+        nonlocal rebuild_calls
+        rebuild_calls += 1
+        return original_rebuild()
+
+    monkeypatch.setattr(service, "_rebuild_atomic", observed_rebuild)
 
     with pytest.raises(RuntimeError, match="^translation backfill removed source data$"):
         service.translate_all()
+
+    assert rebuild_calls == 0
+    assert (stable / "old-sentinel").read_bytes() == b"old"
+
+
+def test_translate_all_rechecks_manifest_before_atomic_swap(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    stable = tmp_path / "data/chroma"
+    stable.mkdir(parents=True)
+    (stable / "old-sentinel").write_bytes(b"old")
+
+    class MutatingCountStore(StagingStore):
+        def count(self) -> int:
+            path = markdown.directory / "a.md"
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("body a", "tampered"),
+                encoding="utf-8",
+            )
+            return super().count()
+
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=MutatingCountStore, translation=ReuseTranslation(),
+    )
+
+    with pytest.raises(RuntimeError, match="^translation backfill removed source data$"):
+        service.translate_all()
+
+    assert (stable / "old-sentinel").read_bytes() == b"old"
 
 
 def test_translate_all_rejects_unexpected_media_byte_change(tmp_path: Path) -> None:

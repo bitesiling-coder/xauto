@@ -46,6 +46,11 @@ _STAGING_PREFIX = ".xrag-chroma-staging-"
 _BACKUP_PREFIX = ".xrag-chroma-backup-"
 
 
+class _SourceManifestChanged(Exception):
+    def __init__(self, missing_source_files: int) -> None:
+        self.missing_source_files = missing_source_files
+
+
 class XragService:
     def __init__(
         self,
@@ -370,7 +375,17 @@ class XragService:
                     )
 
             try:
-                rebuild_counts = self._rebuild_atomic()
+                self._assert_source_manifest(before_files, allowed_markdown_hashes)
+            except _SourceManifestChanged as error:
+                self._fail_translation_backfill_source_data(counts, error)
+
+            try:
+                rebuild_counts = self._rebuild_atomic(
+                    source_manifest=before_files,
+                    allowed_markdown_hashes=allowed_markdown_hashes,
+                )
+            except _SourceManifestChanged as error:
+                self._fail_translation_backfill_source_data(counts, error)
             except Exception as error:
                 counts["errors"] += 1
                 self._log_error(
@@ -387,25 +402,10 @@ class XragService:
                 self._write_last_run("translation-backfill", counts)
                 raise RuntimeError("translation index rebuild failed")
 
-            after_files = self._source_manifest()
-            missing = set(before_files) - set(after_files)
-            unexpected = set(after_files) - set(before_files)
-            changed_files = any(
-                after_files.get(path)
-                != allowed_markdown_hashes.get(path, digest)
-                for path, digest in before_files.items()
-            )
-            if missing or unexpected or changed_files:
-                counts["missing_source_files"] = len(missing)
-                counts["errors"] += 1
-                self._log_error(
-                    "translation-backfill",
-                    "source-data",
-                    RuntimeError("translation backfill removed source data"),
-                    fixed_message="translation backfill removed source data",
-                )
-                self._write_last_run("translation-backfill", counts)
-                raise RuntimeError("translation backfill removed source data")
+            try:
+                self._assert_source_manifest(before_files, allowed_markdown_hashes)
+            except _SourceManifestChanged as error:
+                self._fail_translation_backfill_source_data(counts, error)
             self._write_last_run("translation-backfill", counts)
             return counts
 
@@ -449,7 +449,41 @@ class XragService:
     def _file_sha256(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    def _rebuild_atomic(self) -> dict[str, int]:
+    def _assert_source_manifest(
+        self,
+        before_files: dict[str, str],
+        allowed_markdown_hashes: dict[str, str],
+    ) -> None:
+        after_files = self._source_manifest()
+        missing = set(before_files) - set(after_files)
+        unexpected = set(after_files) - set(before_files)
+        changed_files = any(
+            after_files.get(path) != allowed_markdown_hashes.get(path, digest)
+            for path, digest in before_files.items()
+        )
+        if missing or unexpected or changed_files:
+            raise _SourceManifestChanged(len(missing))
+
+    def _fail_translation_backfill_source_data(
+        self, counts: dict[str, int], error: _SourceManifestChanged
+    ) -> None:
+        counts["missing_source_files"] = error.missing_source_files
+        counts["errors"] += 1
+        self._log_error(
+            "translation-backfill",
+            "source-data",
+            RuntimeError("translation backfill removed source data"),
+            fixed_message="translation backfill removed source data",
+        )
+        self._write_last_run("translation-backfill", counts, outcome="failed")
+        raise RuntimeError("translation backfill removed source data")
+
+    def _rebuild_atomic(
+        self,
+        *,
+        source_manifest: dict[str, str] | None = None,
+        allowed_markdown_hashes: dict[str, str] | None = None,
+    ) -> dict[str, int]:
         counts = {"documents": 0, "chunks": 0, "errors": 0}
         stable = self.config.chroma_dir
         parent = stable.parent
@@ -495,6 +529,11 @@ class XragService:
                     f"expected {counts['chunks']}, found {actual_chunks}"
                 )
 
+            if source_manifest is not None:
+                self._assert_source_manifest(
+                    source_manifest, allowed_markdown_hashes or {}
+                )
+
             store_to_close = staging_store
             staging_store = None
             self._close_vector_store(store_to_close)
@@ -507,6 +546,12 @@ class XragService:
                     "rebuild", counts, cleanup_pending=cleanup_pending.name
                 )
             return counts
+        except _SourceManifestChanged:
+            if staging_store is not None:
+                self._close_vector_store(staging_store)
+            if staging is not None:
+                self._remove_rebuild_path(staging, parent, _STAGING_PREFIX)
+            raise
         except Exception as error:
             counts["errors"] += 1
             self._log_error(
