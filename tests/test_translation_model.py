@@ -677,6 +677,32 @@ def test_install_holds_per_root_writer_lock_across_all_replacements(
     assert state == {"active": False, "entries": 1}
 
 
+def test_install_reuses_verified_model_without_remote_api_or_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_snapshot(tmp_path, REVISION_A)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
+
+    class OfflineApi:
+        def model_info(self, *_args: object, **_kwargs: object) -> object:
+            pytest.fail("verified local model must not query the remote API")
+
+    def offline_downloader(**_kwargs: object) -> None:
+        pytest.fail("verified local model must not download")
+
+    installed = install_translation_model(
+        tmp_path, api=OfflineApi(), downloader=offline_downloader
+    )
+
+    assert installed.revision == REVISION_A
+    assert installed.files == (
+        ("config.json", _sha(b"{}")),
+        ("model.safetensors", _sha(b"model-weights")),
+        ("tokenizer.json", _sha(b'{"tokenizer": true}')),
+    )
+
+
 @pytest.mark.parametrize("same", [True, False])
 def test_install_reuses_only_exact_existing_target(tmp_path: Path, same: bool) -> None:
     target_files = {"config.json": b"same" if same else b"different"}

@@ -25,6 +25,13 @@ _MANIFEST_KEYS = {"version", "model_id", "revision", "snapshot", "files"}
 _INCOMPLETE_MANIFEST = b'{"version":0,"status":"incomplete"}\n'
 
 
+def _offline_model_environment() -> bool:
+    return any(
+        os.environ.get(name, "").strip().lower() in {"1", "on", "true", "yes"}
+        for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
+    )
+
+
 @dataclass(frozen=True)
 class InstalledTranslationModel:
     model_id: str
@@ -324,24 +331,31 @@ def install_translation_model(
     downloader: Callable[..., object] | None = None,
 ) -> InstalledTranslationModel:
     try:
-        if api is None:
-            from huggingface_hub import HfApi
-
-            api = HfApi()
-        if downloader is None:
-            from huggingface_hub import snapshot_download
-
-            downloader = snapshot_download
-
-        info = api.model_info(MODEL_ID, revision="main")  # type: ignore[attr-defined]
-        revision = getattr(info, "sha", None)
-        if not isinstance(revision, str) or _REVISION_PATTERN.fullmatch(revision) is None:
-            raise ValueError("invalid remote revision")
-
         resolved_root = _prepare_install_root(Path(root))
         from xrag.locking import writer_lock
 
         with writer_lock(resolved_root, timeout=600):
+            try:
+                current = verify_translation_model(resolved_root)
+            except RuntimeError:
+                current = None
+            if current is not None and _offline_model_environment():
+                return current
+
+            if api is None:
+                from huggingface_hub import HfApi
+
+                api = HfApi()
+            if downloader is None:
+                from huggingface_hub import snapshot_download
+
+                downloader = snapshot_download
+
+            info = api.model_info(MODEL_ID, revision="main")  # type: ignore[attr-defined]
+            revision = getattr(info, "sha", None)
+            if not isinstance(revision, str) or _REVISION_PATTERN.fullmatch(revision) is None:
+                raise ValueError("invalid remote revision")
+
             return _install_translation_model_transaction(
                 resolved_root,
                 revision,
