@@ -76,4 +76,4 @@ if [[ "${#WINDOWS_WRAPPER}" -lt 4 \
     printf '%s\n' "ERROR: dashboard publisher path is invalid."
     exit 127
 fi
-exec "$WINDOWS_PYTHON" -S "$WINDOWS_WRAPPER"
+exec "$WINDOWS_PYTHON" -I -S "$WINDOWS_WRAPPER"

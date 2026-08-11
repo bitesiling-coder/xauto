@@ -51,9 +51,18 @@ def _git_checked(git: Path, root: Path, *arguments: str) -> str:
         [str(git), *arguments],
         cwd=root,
         capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("publisher Git validation failed")
+    return result.stdout.decode("utf-8", errors="strict")
+
+
+def _git_checked_bytes(git: Path, root: Path, *arguments: str) -> bytes:
+    result = subprocess.run(
+        [str(git), *arguments],
+        cwd=root,
+        capture_output=True,
         check=False,
     )
     if result.returncode != 0:
@@ -61,7 +70,85 @@ def _git_checked(git: Path, root: Path, *arguments: str) -> str:
     return result.stdout
 
 
-def _trusted_root() -> Path:
+def _object_id(value: bytes) -> bytes:
+    candidate = value.strip()
+    if len(candidate) not in {40, 64} or any(
+        byte not in b"0123456789abcdefABCDEF" for byte in candidate
+    ):
+        raise RuntimeError("publisher Git validation failed")
+    return candidate.lower()
+
+
+def _head_blobs(
+    git: Path, root: Path, head: bytes
+) -> dict[Path, bytes]:
+    expected = set(_TRUSTED_RELATIVE_PATHS)
+    tree = _git_checked_bytes(
+        git,
+        root,
+        "ls-tree",
+        "-z",
+        head.decode("ascii"),
+        "--",
+        *(path.as_posix() for path in _TRUSTED_RELATIVE_PATHS),
+    )
+    records = tree[:-1].split(b"\0") if tree.endswith(b"\0") else []
+    entries: dict[Path, bytes] = {}
+    for record in records:
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split()
+        if separator != b"\t" or len(fields) != 3:
+            raise RuntimeError("publisher Git validation failed")
+        mode, object_type, raw_oid = fields
+        try:
+            relative = Path(raw_path.decode("utf-8", errors="strict"))
+        except UnicodeDecodeError as error:
+            raise RuntimeError("publisher Git validation failed") from error
+        if (
+            mode != b"100644"
+            or object_type != b"blob"
+            or relative not in expected
+            or relative in entries
+        ):
+            raise RuntimeError("publisher Git validation failed")
+        oid = _object_id(raw_oid)
+        entries[relative] = _git_checked_bytes(
+            git, root, "cat-file", "blob", oid.decode("ascii")
+        )
+    if set(entries) != expected:
+        raise RuntimeError("publisher Git validation failed")
+    return entries
+
+
+def _validate_index_flags(git: Path, root: Path) -> None:
+    output = _git_checked_bytes(
+        git,
+        root,
+        "ls-files",
+        "-v",
+        "-z",
+        "--",
+        *(path.as_posix() for path in _TRUSTED_RELATIVE_PATHS),
+    )
+    records = output[:-1].split(b"\0") if output.endswith(b"\0") else []
+    expected = {path.as_posix() for path in _TRUSTED_RELATIVE_PATHS}
+    actual: set[str] = set()
+    for record in records:
+        prefix, separator, raw_path = record.partition(b" ")
+        if prefix != b"H" or separator != b" ":
+            raise RuntimeError("publisher index flags are unsafe")
+        try:
+            path = raw_path.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise RuntimeError("publisher index flags are unsafe") from error
+        if path not in expected or path in actual:
+            raise RuntimeError("publisher index flags are unsafe")
+        actual.add(path)
+    if actual != expected:
+        raise RuntimeError("publisher index flags are unsafe")
+
+
+def _trusted_root() -> tuple[Path, dict[Path, bytes]]:
     if sys.platform != "win32":
         raise RuntimeError("publisher requires Windows Python")
     invoked = Path(__file__).absolute()
@@ -90,8 +177,12 @@ def _trusted_root() -> Path:
     top_lines = top_output.splitlines()
     if len(top_lines) != 1 or Path(top_lines[0]).resolve(strict=True) != root:
         raise RuntimeError("untrusted publisher repository")
+    head = _object_id(
+        _git_checked_bytes(git, root, "rev-parse", "--verify", "HEAD^{commit}")
+    )
+    blobs = _head_blobs(git, root, head)
+    _validate_index_flags(git, root)
     pathspecs = [relative.as_posix() for relative in _TRUSTED_RELATIVE_PATHS]
-    _git_checked(git, root, "ls-files", "--error-unmatch", "--", *pathspecs)
     status = _git_checked(
         git,
         root,
@@ -104,12 +195,15 @@ def _trusted_root() -> Path:
     )
     if status:
         raise RuntimeError("trusted publisher code is modified")
-    return root
+    if script.read_bytes() != blobs[_TRUSTED_RELATIVE_PATHS[0]]:
+        raise RuntimeError("trusted publisher wrapper is modified")
+    return root, blobs
 
 
 def _load_source_module(
     name: str,
     path: Path,
+    source: bytes,
     *,
     package: str,
     is_package: bool = False,
@@ -121,7 +215,7 @@ def _load_source_module(
         module.__path__ = []
     sys.modules[name] = module
     try:
-        code = compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+        code = compile(source, str(path), "exec", dont_inherit=True)
         exec(code, module.__dict__)
     except BaseException:
         sys.modules.pop(name, None)
@@ -130,7 +224,14 @@ def _load_source_module(
 
 
 def _publish() -> dict[str, object]:
-    root = _trusted_root()
+    if not (
+        sys.flags.isolated
+        and sys.flags.no_site
+        and sys.flags.ignore_environment
+        and sys.flags.safe_path
+    ):
+        raise RuntimeError("publisher requires isolated Python")
+    root, blobs = _trusted_root()
     names = ("xrag", "xrag.public_content", "xrag.dashboard_publish")
     if any(name in sys.modules for name in names):
         raise RuntimeError("publisher module was already loaded")
@@ -138,17 +239,20 @@ def _publish() -> dict[str, object]:
     _load_source_module(
         "xrag",
         package_root / "__init__.py",
+        blobs[Path("src/xrag/__init__.py")],
         package="xrag",
         is_package=True,
     )
     _load_source_module(
         "xrag.public_content",
         package_root / "public_content.py",
+        blobs[Path("src/xrag/public_content.py")],
         package="xrag",
     )
     module = _load_source_module(
         "xrag.dashboard_publish",
         package_root / "dashboard_publish.py",
+        blobs[Path("src/xrag/dashboard_publish.py")],
         package="xrag",
     )
     publisher = module.PagesPublisher(

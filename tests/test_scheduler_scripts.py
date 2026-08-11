@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -409,7 +410,7 @@ def test_daily_runner_uses_fail_fast_dashboard_update_pipeline() -> None:
     assert "readlink -f" in script
     assert "MZ" in script
     assert 'wslpath -w "$PROJECT_ROOT/scripts/publish-dashboard.py"' in script
-    assert 'exec "$WINDOWS_PYTHON" -S "$WINDOWS_WRAPPER"' in script
+    assert 'exec "$WINDOWS_PYTHON" -I -S "$WINDOWS_WRAPPER"' in script
     assert "--root" not in script.split("dashboard update --no-publish", 1)[1]
     assert 'collect --all' not in script
 
@@ -889,7 +890,7 @@ def test_publish_wrapper_rejects_extra_arguments_without_echoing_them() -> None:
     secret = "auth_token=wrapper-extra-secret"
 
     result = subprocess.run(
-        [sys.executable, "-S", str(PUBLISH_WRAPPER), secret],
+        [sys.executable, "-I", "-S", str(PUBLISH_WRAPPER), secret],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -905,6 +906,41 @@ def test_publish_wrapper_never_adds_project_code_to_sys_path() -> None:
 
     assert "sys.path.insert" not in source
     assert "sys.path.append" not in source
+
+
+def test_source_loader_executes_captured_bytes_after_path_replacement(
+    tmp_path: Path,
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "xrag_publish_wrapper_test", PUBLISH_WRAPPER
+    )
+    assert spec is not None and spec.loader is not None
+    wrapper_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wrapper_module)
+    source_path = tmp_path / "captured.py"
+    trusted = b"VALUE = 'trusted-head-blob'\n"
+    marker = tmp_path / "replacement-executed"
+    source_path.write_bytes(trusted)
+    captured = source_path.read_bytes()
+    source_path.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed', encoding='utf-8')\n"
+        "VALUE = 'malicious-worktree'\n",
+        encoding="utf-8",
+    )
+    module_name = "xrag_captured_source_test"
+    try:
+        loaded = wrapper_module._load_source_module(
+            module_name,
+            source_path,
+            captured,
+            package="",
+        )
+    finally:
+        sys.modules.pop(module_name, None)
+
+    assert loaded.VALUE == "trusted-head-blob"
+    assert not marker.exists()
 
 
 def test_copied_wrapper_rejects_fake_module_before_import_without_git(
@@ -926,7 +962,7 @@ def test_copied_wrapper_rejects_fake_module_before_import_without_git(
     )
 
     result = subprocess.run(
-        [sys.executable, "-S", str(wrapper)],
+        [sys.executable, "-I", "-S", str(wrapper)],
         env={**os.environ, "FAKE_MARKER": str(marker)},
         capture_output=True,
         text=True,
@@ -978,6 +1014,111 @@ def create_trusted_publisher_repo(
     return root, remote
 
 
+def prepare_dashboard_site(root: Path) -> None:
+    site = root / "data" / "dashboard-site"
+    (site / "data").mkdir(parents=True)
+    (site / "index.html").write_text(
+        "<!doctype html><title>Dashboard</title>", encoding="utf-8"
+    )
+    (site / ".nojekyll").write_text("", encoding="utf-8")
+    (site / "data" / "latest.json").write_text("{}", encoding="utf-8")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Python security boundary")
+def test_trusted_wrapper_requires_isolated_no_site_python(tmp_path: Path) -> None:
+    root, _ = create_trusted_publisher_repo(tmp_path)
+    prepare_dashboard_site(root)
+
+    result = subprocess.run(
+        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    _assert_generic_wrapper_failure(result, str(root))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Python security boundary")
+@pytest.mark.parametrize("shadow_name", ["json.py", "pathlib.py", "subprocess.py"])
+def test_isolated_wrapper_ignores_untracked_stdlib_shadows(
+    tmp_path: Path,
+    shadow_name: str,
+) -> None:
+    root, _ = create_trusted_publisher_repo(tmp_path)
+    prepare_dashboard_site(root)
+    marker = tmp_path / f"{shadow_name}.executed"
+    (root / "scripts" / shadow_name).write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['FAKE_MARKER']).write_text('executed', encoding='utf-8')\n"
+        "raise RuntimeError('auth_token=stdlib-shadow-secret')\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            str(root / "scripts" / PUBLISH_WRAPPER.name),
+        ],
+        env={**os.environ, "FAKE_MARKER": str(marker)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "stdlib-shadow-secret" not in result.stdout + result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Python security boundary")
+@pytest.mark.parametrize("index_flag", ["--assume-unchanged", "--skip-worktree"])
+def test_wrapper_never_executes_flag_hidden_worktree_module(
+    tmp_path: Path,
+    index_flag: str,
+) -> None:
+    root, _ = create_trusted_publisher_repo(tmp_path)
+    marker = tmp_path / "hidden-module-executed"
+    module = root / "src" / "xrag" / "dashboard_publish.py"
+    module.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['FAKE_MARKER']).write_text('executed', encoding='utf-8')\n"
+        "class PagesPublisher:\n"
+        "    def __init__(self, *args): pass\n"
+        "    def publish(self, path): return {'changed': False}\n",
+        encoding="utf-8",
+    )
+    relative = "src/xrag/dashboard_publish.py"
+    assert run_git("update-index", index_flag, "--", relative, cwd=root).returncode == 0
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            str(root / "scripts" / PUBLISH_WRAPPER.name),
+        ],
+        env={**os.environ, "FAKE_MARKER": str(marker)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    _assert_generic_wrapper_failure(result, str(root), str(marker))
+    assert not marker.exists()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows Python security boundary")
 @pytest.mark.parametrize(
     "publisher_source,secret",
@@ -997,7 +1138,7 @@ def test_trusted_wrapper_redacts_all_import_failures(
     )
 
     result = subprocess.run(
-        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
+        [sys.executable, "-I", "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -1026,7 +1167,7 @@ def test_trusted_wrapper_rejects_modified_module_before_execution(
     )
 
     result = subprocess.run(
-        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
+        [sys.executable, "-I", "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
         env={**os.environ, "FAKE_MARKER": str(marker)},
         capture_output=True,
         text=True,
@@ -1044,14 +1185,10 @@ def test_windows_python_wrapper_publishes_to_disposable_local_remote(
     tmp_path: Path,
 ) -> None:
     root, _ = create_trusted_publisher_repo(tmp_path)
-    site = root / "data" / "dashboard-site"
-    (site / "data").mkdir(parents=True)
-    (site / "index.html").write_text("<!doctype html><title>Dashboard</title>", encoding="utf-8")
-    (site / ".nojekyll").write_text("", encoding="utf-8")
-    (site / "data" / "latest.json").write_text("{}", encoding="utf-8")
+    prepare_dashboard_site(root)
 
     result = subprocess.run(
-        [sys.executable, "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
+        [sys.executable, "-I", "-S", str(root / "scripts" / PUBLISH_WRAPPER.name)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -1077,4 +1214,7 @@ def test_readme_documents_hybrid_scheduler_runtime() -> None:
     assert "Python 3.11" in readme
     assert "PyYAML" in readme
     assert "python.exe scripts/publish-dashboard.py --root" not in readme
-    assert "python.exe scripts/publish-dashboard.py" in readme
+    assert "python.exe -I -S scripts/publish-dashboard.py" in readme
+    assert "-I -S" in readme
+    assert "HEAD tree blobs" in readme
+    assert "minimal trust boundary" in readme
