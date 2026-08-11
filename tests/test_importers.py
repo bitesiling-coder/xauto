@@ -106,6 +106,30 @@ def test_load_posts_returns_a_detached_categorized_error_without_secrets(
 
 
 @pytest.mark.parametrize(
+    ("suffix", "code"),
+    [
+        (".yaml", "yaml-syntax"),
+        (".json", "json-syntax"),
+        (".md", "front-matter"),
+    ],
+)
+def test_load_posts_classifies_invalid_utf8_at_the_format_boundary(
+    tmp_path: Path, suffix: str, code: str
+) -> None:
+    path = tmp_path / f"bad{suffix}"
+    path.write_bytes(b"\xff\xfe\x80")
+
+    with pytest.raises(ValueError) as raised:
+        load_posts(path)
+
+    error = raised.value
+    assert str(error) == f"Invalid import data in {path}: {code}"
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert len(exception_graph(error)) == 1
+
+
+@pytest.mark.parametrize(
     "content",
     [
         "id: DUPLICATE_TOP_SECRET\nid: second\ntext: valid\n",

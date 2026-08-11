@@ -52,6 +52,8 @@ def load_posts(path: Path) -> list[Post]:
         problem = error
     except json.JSONDecodeError:
         problem = _ImportProblem("json-syntax")
+    except UnicodeDecodeError:
+        problem = _ImportProblem(_syntax_code(suffix))
     except (RecursionError, yaml.YAMLError):
         problem = _ImportProblem(_syntax_code(suffix))
     except OSError:
@@ -71,15 +73,24 @@ def _syntax_code(suffix: str) -> str:
 
 
 def _load_yaml(path: Path) -> object:
-    return safe_load_unique(path.read_text(encoding="utf-8"))
+    try:
+        return safe_load_unique(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise _ImportProblem("yaml-syntax")
 
 
 def _load_json(path: Path) -> object:
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise _ImportProblem("json-syntax")
 
 
 def _load_markdown(path: Path) -> dict[str, object]:
-    content = path.read_text(encoding="utf-8")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise _ImportProblem("front-matter")
     if not content.startswith("---\n"):
         raise _ImportProblem("front-matter")
     end = content.find("\n---\n", 4)
