@@ -372,6 +372,9 @@ def test_install_pins_revision_publishes_manifest_last_and_roundtrips(
     assert replacements[-2] == REVISION_A
     assert installed == verify_translation_model(tmp_path)
     assert installed.files == (("config.json", _sha(b"{}")),)
+    audit_markers = list(tmp_path.glob(".manifest-*.tmp"))
+    assert len(audit_markers) == 1
+    assert audit_markers[0].read_bytes() == b'{"version":0,"status":"incomplete"}\n'
 
 
 def test_install_same_revision_is_idempotent_without_downloading(tmp_path: Path) -> None:
@@ -494,6 +497,75 @@ def test_install_post_publish_failure_rolls_back_current_manifest(
     assert (tmp_path / "manifest.json").read_bytes() == manifest_before
     assert verify_translation_model(tmp_path).revision == REVISION_A
     assert not list(tmp_path.glob(".manifest-*.tmp"))
+
+
+def test_first_install_post_publish_fsync_failure_leaves_inactive_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    real_fsync_directory = module._fsync_directory
+    injected = False
+
+    def fail_root_fsync(path: Path) -> None:
+        nonlocal injected
+        if Path(path) == tmp_path.resolve() and (tmp_path / "manifest.json").exists():
+            injected = True
+            raise OSError("SECRET post-publish failure")
+        real_fsync_directory(path)
+
+    monkeypatch.setattr(module, "_fsync_directory", fail_root_fsync)
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        install_translation_model(
+            tmp_path,
+            api=FakeApi(REVISION_A),
+            downloader=_downloader_for({"config.json": b"new"}),
+        )
+
+    assert injected is True
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        verify_translation_model(tmp_path)
+
+
+def test_first_install_final_verify_failure_leaves_inactive_manifest_and_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import xrag.translation_model as module
+
+    real_verify = module.verify_translation_model
+    injected = False
+
+    def fail_first_valid_manifest(root: Path) -> InstalledTranslationModel:
+        nonlocal injected
+        installed = real_verify(root)
+        if not injected:
+            injected = True
+            raise RuntimeError("SECRET final verification failure")
+        return installed
+
+    monkeypatch.setattr(module, "verify_translation_model", fail_first_valid_manifest)
+
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        install_translation_model(
+            tmp_path,
+            api=FakeApi(REVISION_A),
+            downloader=_downloader_for({"config.json": b"new"}),
+        )
+
+    assert injected is True
+    with pytest.raises(RuntimeError, match="^local translation model unavailable$"):
+        real_verify(tmp_path)
+
+    monkeypatch.setattr(module, "verify_translation_model", real_verify)
+    installed = install_translation_model(
+        tmp_path,
+        api=FakeApi(REVISION_A),
+        downloader=_downloader_for({"config.json": b"new"}),
+    )
+
+    assert installed.revision == REVISION_A
+    assert real_verify(tmp_path) == installed
 
 
 def test_install_rolls_back_when_manifest_replace_succeeds_then_raises(

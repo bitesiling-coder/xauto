@@ -22,6 +22,7 @@ _HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 _STAGING_PATTERN = re.compile(r"\.install-[0-9a-f]{32}")
 _TEMP_MANIFEST_PATTERN = re.compile(r"\.manifest-[0-9a-f]{32}\.tmp")
 _MANIFEST_KEYS = {"version", "model_id", "revision", "snapshot", "files"}
+_INCOMPLETE_MANIFEST = b'{"version":0,"status":"incomplete"}\n'
 
 
 @dataclass(frozen=True)
@@ -361,6 +362,8 @@ def _install_translation_model_transaction(
     staging_identity: tuple[int, int] | None = None
     temporary_manifest: Path | None = None
     temporary_manifest_identity: tuple[int, int] | None = None
+    rollback_marker: Path | None = None
+    rollback_marker_identity: tuple[int, int] | None = None
     try:
         try:
             current = verify_translation_model(resolved_root)
@@ -420,6 +423,12 @@ def _install_translation_model_transaction(
         if previous_identity is None:
             if os.path.lexists(manifest_path):
                 raise ValueError("manifest changed before publication")
+            rollback_marker, rollback_marker_identity = _prepare_incomplete_marker(
+                resolved_root
+            )
+            _fsync_directory(resolved_root)
+            if os.path.lexists(manifest_path):
+                raise ValueError("manifest changed before publication")
         elif _identity(_require_regular_file(manifest_path)) != previous_identity:
             raise ValueError("manifest changed before publication")
         published_identity = temporary_manifest_identity
@@ -435,6 +444,8 @@ def _install_translation_model_transaction(
                 manifest_path,
                 published_identity,
                 previous_manifest,
+                rollback_marker,
+                rollback_marker_identity,
             )
             raise
     finally:
@@ -548,14 +559,39 @@ def _capture_manifest(
     return captured.content, captured.identity
 
 
+def _prepare_incomplete_marker(root: Path) -> tuple[Path, tuple[int, int]]:
+    for _attempt in range(16):
+        candidate = root / f".manifest-{uuid.uuid4().hex}.tmp"
+        if (
+            candidate.parent != root
+            or _TEMP_MANIFEST_PATTERN.fullmatch(candidate.name) is None
+        ):
+            raise ValueError("unsafe rollback marker")
+        try:
+            output = candidate.open("xb")
+        except FileExistsError:
+            continue
+        with output:
+            marker_identity = _ownership_identity(os.fstat(output.fileno()))
+            output.write(_INCOMPLETE_MANIFEST)
+            output.flush()
+            os.fsync(output.fileno())
+        if _ownership_identity(_require_regular_file(candidate)) != marker_identity:
+            raise ValueError("rollback marker changed")
+        return candidate, marker_identity
+    raise ValueError("could not allocate rollback marker")
+
+
 def _rollback_manifest(
     root: Path,
     manifest_path: Path,
     published_identity: tuple[int, int] | None,
     previous_manifest: bytes | None,
+    prepared_path: Path | None,
+    prepared_identity: tuple[int, int] | None,
 ) -> None:
-    rollback_path: Path | None = None
-    rollback_identity: tuple[int, int] | None = None
+    rollback_path = prepared_path
+    rollback_identity = prepared_identity
     try:
         if published_identity is None:
             return
@@ -586,12 +622,21 @@ def _rollback_manifest(
                 break
             if rollback_path is None:
                 return
-            current = _require_regular_file(manifest_path)
-            if _ownership_identity(current) != published_identity:
-                return
-            os.replace(rollback_path, manifest_path)
-            rollback_path = None
-            rollback_identity = None
+        if rollback_path is None or rollback_identity is None:
+            return
+        if (
+            rollback_path.parent != root
+            or _TEMP_MANIFEST_PATTERN.fullmatch(rollback_path.name) is None
+            or _ownership_identity(_require_regular_file(rollback_path))
+            != rollback_identity
+        ):
+            return
+        current = _require_regular_file(manifest_path)
+        if _ownership_identity(current) != published_identity:
+            return
+        os.replace(rollback_path, manifest_path)
+        rollback_path = None
+        rollback_identity = None
         try:
             _fsync_directory(root)
         except OSError:
