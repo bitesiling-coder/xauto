@@ -791,5 +791,8 @@ def _model_fingerprint(
     for relative in sorted(tree):
         node = tree[relative]
         size, mtime_ns, device, inode = node.identity
+        if node.kind == "directory":
+            size = 0
+            mtime_ns = 0
         entries.append((relative, node.kind, device, inode, size, mtime_ns))
     return tuple(entries)

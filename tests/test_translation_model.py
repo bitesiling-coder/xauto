@@ -1276,14 +1276,15 @@ def test_engine_loaded_model_uses_memory_when_disk_metadata_appears_unchanged(
     engine = TransformersTranslationEngine(tmp_path)
     assert engine.translate_many(["first"]) == ["memory result"]
 
-    original = config.stat()
-    original_snapshot = snapshot.stat()
+    original = os.lstat(config)
+    original_snapshot = os.lstat(snapshot)
     config.write_bytes(b"evil")
     os.utime(config, ns=(original.st_atime_ns, original.st_mtime_ns))
     os.utime(
         snapshot,
         ns=(original_snapshot.st_atime_ns, original_snapshot.st_mtime_ns),
     )
+    assert engine._fingerprint == module._model_fingerprint(engine._installed)
     monkeypatch.setattr(
         module,
         "_hash_file",
