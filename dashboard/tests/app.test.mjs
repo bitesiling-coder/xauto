@@ -421,7 +421,7 @@ test("loadSnapshotState reports failed when no prior snapshot exists", async () 
   assert.deepEqual(result, { status: "failed", snapshot: null, refreshed: false });
 });
 
-test("bannerForState applies stale and refresh-result priority", () => {
+test("bannerForState preserves initial stale and fallback warnings", () => {
   const current = validSnapshot();
   const now = Date.parse("2026-08-10T13:00:00+08:00");
   assert.match(bannerForState(current, "unchanged", now).message, /当前已是最新数据/);
@@ -441,7 +441,10 @@ test("bannerForState applies stale and refresh-result priority", () => {
 
   const stale = validSnapshot();
   stale.generated_at = "2026-08-08T00:00:00+08:00";
-  assert.match(bannerForState(stale, "failed-with-existing", now).message, /超过 26 小时/);
+  assert.equal(
+    bannerForState(stale, "newer", now, false).message,
+    "当前快照已超过 26 小时，内容可能不是最新，请尝试刷新。",
+  );
 });
 
 test("bannerForState distinguishes initial load from a user refresh", () => {
@@ -481,6 +484,29 @@ test("bannerForState keeps refresh outcomes ahead of fallback context", () => {
   );
   assert.match(failedWithoutRefreshFlag.message, /^刷新失败，继续展示上次数据。/);
   assert.match(failedWithoutRefreshFlag.message, /回溯样本/);
+});
+
+test("bannerForState keeps refresh outcomes ahead of stale and fallback context", () => {
+  const staleFallback = validSnapshot();
+  staleFallback.generated_at = "2026-08-08T00:00:00+08:00";
+  staleFallback.fallback_used = true;
+  staleFallback.posts[0].fallback = true;
+  const now = Date.parse("2026-08-10T13:00:00+08:00");
+
+  assert.equal(
+    bannerForState(staleFallback, "newer", now, true).message,
+    "刷新成功，已载入新数据。当前快照仍较旧。其中包含已标注的回溯样本。",
+  );
+  assert.equal(
+    bannerForState(staleFallback, "unchanged", now, true).message,
+    "当前已是最新数据。当前快照仍较旧。其中包含已标注的回溯样本。",
+  );
+  const failed = bannerForState(staleFallback, "failed-with-existing", now, true);
+  assert.equal(
+    failed.message,
+    "刷新失败，继续展示上次数据。当前快照仍较旧。其中包含已标注的回溯样本。",
+  );
+  assert.equal(failed.tone, "error");
 });
 
 test("isStale becomes true only after 26 hours", () => {

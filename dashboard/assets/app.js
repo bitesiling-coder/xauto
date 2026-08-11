@@ -287,32 +287,35 @@ function stableSnapshot(value) {
 }
 
 export function bannerForState(snapshot, status, now = Date.now(), refreshed = true) {
-  if (snapshot && isStale(snapshot.generated_at, now)) {
+  const stale = snapshot && isStale(snapshot.generated_at, now);
+  const fallback = Boolean(snapshot?.fallback_used);
+  if (stale && !refreshed && status === "newer") {
     return {
       message: "当前快照已超过 26 小时，内容可能不是最新，请尝试刷新。",
       tone: "warning",
     };
   }
-  const fallbackContext = snapshot?.fallback_used
-    ? "最新窗口样本不足，页面包含已标注的回溯样本。"
-    : "";
-  if (fallbackContext && !refreshed && status === "newer") {
+  if (fallback && !refreshed && status === "newer") {
     return { message: "最新窗口样本不足，页面包含已标注的回溯样本。", tone: "warning" };
   }
+  const snapshotContext = [
+    stale ? "当前快照仍较旧。" : "",
+    fallback ? "其中包含已标注的回溯样本。" : "",
+  ].join("");
   if (status === "unchanged") {
     return {
-      message: `当前已是最新数据。${fallbackContext}`,
-      tone: fallbackContext ? "warning" : "default",
+      message: `当前已是最新数据。${snapshotContext}`,
+      tone: snapshotContext ? "warning" : "default",
     };
   }
   if (status === "newer") {
     return {
-      message: `${refreshed ? "刷新成功，已载入新数据。" : "已载入最新公开热点快照。"}${fallbackContext}`,
-      tone: fallbackContext ? "warning" : "default",
+      message: `${refreshed ? "刷新成功，已载入新数据。" : "已载入最新公开热点快照。"}${snapshotContext}`,
+      tone: snapshotContext ? "warning" : "default",
     };
   }
   if (status === "failed-with-existing") {
-    return { message: `刷新失败，继续展示上次数据。${fallbackContext}`, tone: "error" };
+    return { message: `刷新失败，继续展示上次数据。${snapshotContext}`, tone: "error" };
   }
   return { message: "暂时无法读取热点数据，请稍后点击“立即刷新”重试。", tone: "error" };
 }
