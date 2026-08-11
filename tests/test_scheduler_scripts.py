@@ -1250,7 +1250,9 @@ def test_readme_documents_hybrid_scheduler_runtime() -> None:
     assert "verification or publication failure keeps the live snapshot" in readme
     assert "Installation temporary files may remain for audit" in readme
     assert (
-        "never deletes existing source Markdown/media or files outside controlled "
-        "project-derived temporary/index paths"
+        "never deletes existing source Markdown/media or files outside the project"
     ) in readme
-    assert "controlled project-derived temporary/index cleanup may occur" in readme
+    assert (
+        "project-managed generated data (for example logs, model manifests, "
+        "temporary files, and derived indexes) may be atomically replaced or cleaned"
+    ) in readme
