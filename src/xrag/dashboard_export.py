@@ -163,7 +163,7 @@ def _public_post(
     item: RankedPost, media: list[dict[str, str]]
 ) -> dict[str, object]:
     post = item.post
-    return {
+    payload: dict[str, object] = {
         "id": post.id,
         "author": post.author,
         "text": post.text,
@@ -178,6 +178,10 @@ def _public_post(
         "fallback": item.fallback,
         "media": media,
     }
+    text_zh = post.text_zh.strip()
+    if text_zh and post.translation_zh is not None:
+        payload["text_zh"] = text_zh
+    return payload
 
 
 def _valid_media(content: bytes, suffix: str) -> bool:

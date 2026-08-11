@@ -17,10 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xrag.config import AppConfig
 import xrag.dashboard_export as dashboard_export
-from xrag.dashboard_export import DashboardBuilder, assert_public_content
-from xrag.dashboard_scoring import TOPICS
+from xrag.dashboard_export import DashboardBuilder, _public_post, assert_public_content
+from xrag.dashboard_scoring import TOPICS, RankedPost
 from xrag.markdown_store import MarkdownStore
-from xrag.models import LocalMedia, Post
+from xrag.models import LocalMedia, Post, TranslationMetadata
 
 
 def test_publisher_import_needs_only_the_standard_library() -> None:
@@ -80,6 +80,84 @@ def save_post(root: Path, **overrides: object) -> Path:
     return MarkdownStore(config(root).markdown_dir).upsert(
         Post(**values)  # type: ignore[arg-type]
     )
+
+
+def translation_for(text: str) -> TranslationMetadata:
+    return TranslationMetadata(
+        language="zh-CN",
+        model_id="translator-v1",
+        revision="r1",
+        source_sha256=hashlib.sha256(text.strip().encode("utf-8")).hexdigest(),
+        translated_at="2026-08-10T00:00:00Z",
+    )
+
+
+def ranked_post(post: Post) -> RankedPost:
+    return RankedPost(
+        post=post,
+        topic=TOPICS[0],
+        score=0.75,
+        engagement=0.5,
+        freshness=0.5,
+        topic_frequency=1.0,
+        completeness=1.0,
+        fallback=False,
+    )
+
+
+def test_public_post_exports_only_valid_nonblank_chinese_translation() -> None:
+    source = "Autonomous agents need stronger security."
+    translated = Post(
+        "post-1",
+        "Ada",
+        source,
+        NOW.isoformat(),
+        "https://x.com/ada/status/post-1",
+        text_zh="\u4e2d\u6587\u8bd1\u6587",
+        translation_zh=translation_for(source),
+    )
+    missing_metadata = Post(
+        "post-2",
+        "Ada",
+        source,
+        NOW.isoformat(),
+        "https://x.com/ada/status/post-2",
+        text_zh="\u7f3a\u5c11\u7ffb\u8bd1\u5143\u6570\u636e\u3002",
+    )
+    blank_translation = Post(
+        "post-3",
+        "Ada",
+        source,
+        NOW.isoformat(),
+        "https://x.com/ada/status/post-3",
+        text_zh="   ",
+        translation_zh=translation_for(source),
+    )
+
+    assert _public_post(ranked_post(translated), [])["text_zh"] == "\u4e2d\u6587\u8bd1\u6587"
+    assert "text_zh" not in _public_post(ranked_post(missing_metadata), [])
+    assert "text_zh" not in _public_post(ranked_post(blank_translation), [])
+
+
+def test_public_post_translation_is_checked_for_unsafe_public_content() -> None:
+    source = "Autonomous agents need stronger security."
+    unsafe_translation = r"C:\\Users\\name\\private"
+    post = Post(
+        "post-1",
+        "Ada",
+        source,
+        NOW.isoformat(),
+        "https://x.com/ada/status/post-1",
+        text_zh=unsafe_translation,
+        translation_zh=translation_for(source),
+    )
+    content = json.dumps({"posts": [_public_post(ranked_post(post), [])]})
+
+    with pytest.raises(ValueError, match="unsafe public output") as error:
+        assert_public_content(content)
+
+    assert source not in str(error.value)
+    assert unsafe_translation not in str(error.value)
 
 
 def seed_latest(root: Path) -> tuple[Path, bytes]:
@@ -296,6 +374,43 @@ def test_build_writes_exact_public_schema_topics_static_files_and_utf8(tmp_path:
         "post_count": 1,
         "media_count": 0,
     }
+
+
+def test_build_exports_only_nonblank_chinese_translation(tmp_path: Path) -> None:
+    prepare_static(tmp_path)
+    source = "Autonomous agents need stronger security."
+    save_post(
+        tmp_path,
+        text=source,
+        text_zh="智能体需要更强的安全保障。",
+        translation_zh=translation_for(source),
+    )
+
+    build(tmp_path)
+
+    latest = config(tmp_path).dashboard_dir / "data" / "latest.json"
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["posts"][0]["text_zh"] == "智能体需要更强的安全保障。"
+
+
+@pytest.mark.parametrize("translation", ["API_KEY=secret", r"C:\\Users\\name\\private"])
+def test_build_scans_chinese_translation_for_unsafe_public_content(
+    tmp_path: Path, translation: str
+) -> None:
+    prepare_static(tmp_path)
+    source = "Autonomous agents need stronger security."
+    save_post(
+        tmp_path,
+        text=source,
+        text_zh=translation,
+        translation_zh=translation_for(source),
+    )
+
+    with pytest.raises(ValueError, match="unsafe public output") as error:
+        build(tmp_path)
+
+    assert source not in str(error.value)
+    assert translation not in str(error.value)
 
 
 @pytest.mark.parametrize(
