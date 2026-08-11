@@ -17,4 +17,18 @@ if ! command -v opencli >/dev/null 2>&1; then
     exit 127
 fi
 
-exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update
+if ! command -v python.exe >/dev/null 2>&1; then
+    printf '%s\n' "ERROR: required command 'python.exe' was not found in PATH."
+    exit 127
+fi
+
+if ! command -v wslpath >/dev/null 2>&1; then
+    printf '%s\n' "ERROR: required command 'wslpath' was not found in PATH."
+    exit 127
+fi
+
+"$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update --no-publish
+
+WINDOWS_ROOT="$(wslpath -w "$PROJECT_ROOT")"
+WINDOWS_WRAPPER="$(wslpath -w "$PROJECT_ROOT/scripts/publish-dashboard.py")"
+exec python.exe "$WINDOWS_WRAPPER" --root "$WINDOWS_ROOT"

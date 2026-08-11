@@ -205,19 +205,39 @@ def dashboard_publish(ctx: typer.Context) -> None:
     _print_json(_run(lambda: _build_and_publish(ctx.obj)))
 
 
-def _collect_build_publish(root: Path) -> dict[str, object]:
+def _collect_build_publish(
+    root: Path, *, publish: bool = True
+) -> dict[str, object]:
     collection = build_service(root).collect_all()
     if sum(counts["stored"] for _, counts in collection) == 0:
         raise RuntimeError(
             "Collection stored no posts; dashboard publication stopped"
         )
-    result = _build_and_publish(root)
-    return {"collection": collection, **result}
+    build_result = build_dashboard(root).build()
+    result: dict[str, object] = {
+        "collection": collection,
+        "build": build_result,
+    }
+    if publish:
+        site_dir = root.resolve() / "data" / "dashboard-site"
+        result["publish"] = build_pages_publisher(root).publish(site_dir)
+    return result
 
 
 @dashboard_app.command("update")
-def dashboard_update(ctx: typer.Context) -> None:
-    _print_json(_run(lambda: _collect_build_publish(ctx.obj)))
+def dashboard_update(
+    ctx: typer.Context,
+    publish: Annotated[
+        bool,
+        typer.Option(
+            "--publish/--no-publish",
+            help="Publish with Git after collection and dashboard build.",
+        ),
+    ] = True,
+) -> None:
+    _print_json(
+        _run(lambda: _collect_build_publish(ctx.obj, publish=publish))
+    )
 
 
 def _print_json(value: Any) -> None:

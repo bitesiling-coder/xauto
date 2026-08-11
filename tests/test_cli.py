@@ -186,6 +186,73 @@ def test_dashboard_update_collects_before_build_and_publish(
     assert json.loads(result.stdout)["collection"][0][1]["stored"] == 1
 
 
+def test_dashboard_update_no_publish_collects_then_builds_without_publisher(
+    monkeypatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    service = FakeService()
+    service.collect_all = lambda: events.append("collect") or [
+        ("query", {"found": 1, "stored": 1, "chunks": 1, "errors": 0})
+    ]
+    dashboard = FakeDashboardBuilder()
+    dashboard.build = lambda: events.append("build") or {
+        "output": str(tmp_path / "data" / "dashboard-site"),
+        "posts": 1,
+        "media": 0,
+    }
+    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_dashboard", lambda root: dashboard)
+    monkeypatch.setattr(
+        cli,
+        "build_pages_publisher",
+        lambda root: pytest.fail("publisher must stay lazy with --no-publish"),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["--root", str(tmp_path), "dashboard", "update", "--no-publish"],
+    )
+
+    assert result.exit_code == 0
+    assert events == ["collect", "build"]
+    assert json.loads(result.stdout) == {
+        "collection": [
+            ["query", {"found": 1, "stored": 1, "chunks": 1, "errors": 0}]
+        ],
+        "build": {
+            "output": str(tmp_path / "data" / "dashboard-site"),
+            "posts": 1,
+            "media": 0,
+        },
+    }
+
+
+def test_dashboard_update_explicit_publish_keeps_manual_publish_semantics(
+    monkeypatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    service = FakeService()
+    service.collect_all = lambda: events.append("collect") or [
+        ("query", {"found": 1, "stored": 1, "chunks": 1, "errors": 0})
+    ]
+    dashboard = FakeDashboardBuilder()
+    dashboard.build = lambda: events.append("build") or {"posts": 1}
+    publisher = FakePublisher()
+    publisher.publish = lambda path: events.append("publish") or {"changed": True}
+    monkeypatch.setattr(cli, "build_service", lambda root: service)
+    monkeypatch.setattr(cli, "build_dashboard", lambda root: dashboard)
+    monkeypatch.setattr(cli, "build_pages_publisher", lambda root: publisher)
+
+    result = runner.invoke(
+        cli.app,
+        ["--root", str(tmp_path), "dashboard", "update", "--publish"],
+    )
+
+    assert result.exit_code == 0
+    assert events == ["collect", "build", "publish"]
+    assert "publish" in json.loads(result.stdout)
+
+
 def test_dashboard_update_stops_before_build_when_collection_stores_nothing(
     monkeypatch, tmp_path: Path
 ) -> None:

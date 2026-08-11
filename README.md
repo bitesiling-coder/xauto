@@ -188,7 +188,9 @@ Get-ScheduledTaskInfo -TaskName 'X-RAG Daily Collection'
 
 安装器将登录类型设为 `Interactive`，因此只有当该 Windows 用户已登录，且 OpenCLI 浏览器桥接可用时，收集任务才能正常运行。触发时间始终是 Windows 本地时间，不会根据 `schedule.timezone` 换算。
 
-任务会调用 WSL 内的 `scripts/run-daily.sh`，该脚本运行项目自带的 `.venv/bin/xrag --root <项目根> dashboard update`，因此每天 10:00 依次完成四组关键词采集、静态站点构建、安全校验和 `gh-pages` 发布。它只有在当前 Windows 用户已登录、OpenCLI 浏览器桥接和 Twitter/X 扩展已连接、Git 提交身份已配置且 Git 认证允许推送 `origin/gh-pages` 时才能完成全流程。任一步失败都会停止后续步骤并保留上一次成功发布的线上快照，详细输出写入 `logs/scheduler.log`。
+任务会调用 WSL 内的 `scripts/run-daily.sh`。每天 10:00，它先在 WSL 运行项目自带的 `.venv/bin/xrag --root <项目根> dashboard update --no-publish`，完成四组关键词采集、静态站点构建和安全校验；成功后再把项目根目录和 `scripts/publish-dashboard.py` 转换为 Windows 路径，使用 Windows `python.exe` 调用已审计的 `PagesPublisher`，通过 Windows Git/GCM 发布 `gh-pages`。Manual `dashboard update` still publishes by default；`--no-publish` 仅供混合计划任务把发布阶段交给 Windows 使用。
+
+Hybrid scheduler requirements: WSL performs collection and build, while Windows Python, Windows Git, and Git Credential Manager perform the authenticated publication. 当前 Windows 用户必须已登录，OpenCLI 浏览器桥接和 Twitter/X 扩展必须已连接，WSL 中必须能找到 `opencli`、`python.exe` 和 `wslpath`，Windows Git 必须配置提交身份，且 Git Credential Manager 必须允许推送 `origin/gh-pages`。任一步失败都会停止后续步骤并保留上一次成功发布的线上快照，详细输出写入 `logs/scheduler.log`。计划任务不会回退到 WSL Git 发布。
 
 `config/keywords.yaml` 中的 `schedule.enabled: false` **不会**停止 `run-daily.sh`，也不会禁用或删除已注册的 Windows 任务。需要暂停或删除时显式执行：
 
@@ -216,7 +218,7 @@ xrag --root . status
 - **WSL 代理警告或无法下载模型：** Windows 上的 localhost 代理未必能直接从 WSL 访问。先修正 WSL 网络/代理配置，确认 WSL 可访问所需下载地址，再重试首次模型加载。
 - **更换了 `embedding.model` 或 Chroma 损坏：**运行 `xrag --root . rebuild`。重建会在独立目录生成完整新索引，成功后才替换旧索引；模型加载或索引失败时保留旧索引。
 - **Markdown 损坏：** `xrag --root . status` 的 `document_errors` 会报告无法解析的文档数。检查 `logs/errors.jsonl`，修复对应 Markdown front matter 后再 `rebuild`；只要有一篇文档失败，重建就不会替换旧索引。
-- **计划任务失败：**查看 `logs/scheduler.log`、`logs/errors.jsonl` 和 `Get-ScheduledTaskInfo`，确认 WSL 发行版名、`.venv/bin/xrag` 与项目路径存在；再运行 `opencli doctor` 检查浏览器桥接/扩展，并确认 Git 身份与 `git push origin gh-pages` 认证可用。修复后可以手动运行 `xrag --root . dashboard update` 验证同一流程。
+- **计划任务失败：**查看 `logs/scheduler.log`、`logs/errors.jsonl` 和 `Get-ScheduledTaskInfo`，确认 WSL 发行版名、`.venv/bin/xrag`、`python.exe`、`wslpath` 与项目路径存在；再运行 `opencli doctor` 检查浏览器桥接/扩展，并在 Windows PowerShell 中确认 Windows Git 身份和 Git Credential Manager 认证可用。WSL 只负责 `dashboard update --no-publish`；发布由 Windows `python.exe scripts/publish-dashboard.py --root <Windows项目路径>` 完成，不依赖 WSL Git 网络。修复后可手动运行不带 `--no-publish` 的 `xrag --root . dashboard update` 验证默认的采集、构建和发布流程。
 - **看板构建或发布被阻止：**空采集、候选内容不足、公开输出包含凭据/本地路径、Git worktree 不安全、远程冲突或网络认证失败都会使命令以非零状态退出。不要删除 `data/markdown/` 或重建 `gh-pages` worktree 来规避校验；先根据脱敏错误检查输入与 Git/OpenCLI 状态，然后重试。失败不会替换当前线上快照。
 - **图片下载失败：**查看 `logs/errors.jsonl` 中的 `media` 记录；正文和远程链接仍会保留。确认 `pbs.twimg.com` 可访问后，下次采集同一推文会再次尝试。
 - **中文乱码：**导入文件必须是 UTF-8；在 WSL 中可设置 `export PYTHONUTF8=1` 后重试。请优先在 WSL 终端运行 CLI。
@@ -242,7 +244,8 @@ X工作流/
 ├── logs/                        # 最近运行、错误和调度日志
 ├── scripts/
 │   ├── install-schedule.ps1      # Windows 计划任务安装/更新
-│   └── run-daily.sh              # WSL 每日收集入口
+│   ├── run-daily.sh              # WSL 采集/构建与 Windows 发布编排入口
+│   └── publish-dashboard.py      # Windows Python/Git 发布入口
 ├── src/xrag/                     # Python 包与 CLI
 └── tests/                       # 测试与离线 fixture
 ```

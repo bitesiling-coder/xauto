@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
+import sys
 
 import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNNER = PROJECT_ROOT / "scripts" / "run-daily.sh"
+PUBLISH_WRAPPER = PROJECT_ROOT / "scripts" / "publish-dashboard.py"
 INSTALLER = PROJECT_ROOT / "scripts" / "install-schedule.ps1"
 INSTALLER_RELATIVE = ".\\scripts\\install-schedule.ps1"
 
@@ -398,7 +401,12 @@ def test_daily_runner_uses_fail_fast_dashboard_update_pipeline() -> None:
     assert "command -v opencli" in script
     assert "scheduled collection start" in script
     assert script.count('dashboard update') == 1
-    assert 'exec "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update' in script
+    assert '"$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update --no-publish' in script
+    assert "command -v python.exe" in script
+    assert "command -v wslpath" in script
+    assert 'wslpath -w "$PROJECT_ROOT"' in script
+    assert 'wslpath -w "$PROJECT_ROOT/scripts/publish-dashboard.py"' in script
+    assert 'exec python.exe "$WINDOWS_WRAPPER" --root "$WINDOWS_ROOT"' in script
     assert 'collect --all' not in script
 
 
@@ -592,7 +600,11 @@ def test_invalid_distribution_fails_before_wsl(invalid_distribution: str) -> Non
 
 
 def test_scheduler_scripts_do_not_contain_credentials() -> None:
-    combined = (RUNNER.read_text(encoding="utf-8") + INSTALLER.read_text(encoding="utf-8")).lower()
+    combined = (
+        RUNNER.read_text(encoding="utf-8")
+        + PUBLISH_WRAPPER.read_text(encoding="utf-8")
+        + INSTALLER.read_text(encoding="utf-8")
+    ).lower()
 
     for forbidden in ("auth_token", "ct0", "credentials"):
         assert forbidden not in combined
@@ -633,7 +645,12 @@ def translate_with_wsl(path: Path) -> str:
     return translated.stdout.decode("utf-8").strip()
 
 
-def prepare_wsl_runner(tmp_path: Path, *, with_opencli: bool) -> tuple[Path, str, str]:
+def prepare_wsl_runner(
+    tmp_path: Path,
+    *,
+    with_opencli: bool,
+    with_python: bool = True,
+) -> tuple[Path, str, str]:
     if os.name == "nt" and shutil.which("wsl.exe") is None:
         pytest.skip("WSL is not installed")
 
@@ -646,6 +663,7 @@ def prepare_wsl_runner(tmp_path: Path, *, with_opencli: bool) -> tuple[Path, str
     fake_bin.mkdir(parents=True)
     local_bin.mkdir(parents=True)
     (scripts / "run-daily.sh").write_bytes(RUNNER.read_bytes())
+    (scripts / "publish-dashboard.py").write_bytes(PUBLISH_WRAPPER.read_bytes())
     fake_xrag = fake_bin / "xrag"
     fake_xrag.write_text(
         "#!/usr/bin/env bash\n"
@@ -667,14 +685,30 @@ def prepare_wsl_runner(tmp_path: Path, *, with_opencli: bool) -> tuple[Path, str
             newline="\n",
         )
         fake_opencli.chmod(0o755)
+    if with_python:
+        fake_python = local_bin / "python.exe"
+        fake_python.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'PYTHON_ARG=<%s>\\n' \"$@\"\n"
+            "printf 'PYTHON_RAN\\n'\n"
+            "exit \"${FAKE_PYTHON_STATUS:-0}\"\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        fake_python.chmod(0o755)
 
     return project, translate_with_wsl(scripts / "run-daily.sh"), translate_with_wsl(fake_home)
 
 
-def run_daily_in_minimal_environment(wsl_runner: str, wsl_home: str, status: int = 0) -> subprocess.CompletedProcess[bytes]:
+def run_daily_in_minimal_environment(
+    wsl_runner: str,
+    wsl_home: str,
+    status: int = 0,
+    python_status: int = 0,
+) -> subprocess.CompletedProcess[bytes]:
     if os.name != "nt":
         return subprocess.run(
-            ["env", "-i", f"HOME={wsl_home}", "PATH=/usr/bin:/bin", f"FAKE_STATUS={status}", "bash", wsl_runner],
+            ["env", "-i", f"HOME={wsl_home}", "PATH=/usr/bin:/bin", f"FAKE_STATUS={status}", f"FAKE_PYTHON_STATUS={python_status}", "bash", wsl_runner],
             capture_output=True,
             check=False,
         )
@@ -690,6 +724,7 @@ def run_daily_in_minimal_environment(wsl_runner: str, wsl_home: str, status: int
             f"HOME={wsl_home}",
             "PATH=/usr/bin:/bin",
             f"FAKE_STATUS={status}",
+            f"FAKE_PYTHON_STATUS={python_status}",
             "bash",
             wsl_runner,
         ],
@@ -712,10 +747,16 @@ def test_daily_runner_finds_opencli_and_sets_offline_environment(tmp_path: Path)
         f"ARG=<{wsl_project}>",
         "ARG=<dashboard>",
         "ARG=<update>",
+        "ARG=<--no-publish>",
     ]
     assert f"OPENCLI=<{wsl_home}/.local/bin/opencli>" in log
     assert "HF_HUB_OFFLINE=<1>" in log
     assert "TRANSFORMERS_OFFLINE=<1>" in log
+    python_args = [line for line in log.splitlines() if line.startswith("PYTHON_ARG=")]
+    assert python_args[0].endswith("publish-dashboard.py>")
+    assert python_args[1] == "PYTHON_ARG=<--root>"
+    assert python_args[2].endswith("project with spaces>")
+    assert "PYTHON_RAN" in log
 
 
 def test_daily_runner_exits_127_before_xrag_when_opencli_is_absent(tmp_path: Path) -> None:
@@ -739,3 +780,139 @@ def test_daily_runner_propagates_xrag_nonzero_status(tmp_path: Path) -> None:
     assert result.returncode == 23, result.stderr.decode("utf-8", errors="replace")
     log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
     assert "XRAG_RAN" in log
+    assert "PYTHON_RAN" not in log
+
+
+def test_daily_runner_exits_127_before_xrag_when_windows_python_is_absent(
+    tmp_path: Path,
+) -> None:
+    project, wsl_runner, wsl_home = prepare_wsl_runner(
+        tmp_path, with_opencli=True, with_python=False
+    )
+
+    result = run_daily_in_minimal_environment(wsl_runner, wsl_home)
+
+    assert result.returncode == 127
+    log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
+    assert "python.exe" in log
+    assert "XRAG_RAN" not in log
+    assert "PYTHON_RAN" not in log
+
+
+def test_daily_runner_propagates_native_publisher_status(tmp_path: Path) -> None:
+    project, wsl_runner, wsl_home = prepare_wsl_runner(tmp_path, with_opencli=True)
+
+    result = run_daily_in_minimal_environment(
+        wsl_runner, wsl_home, python_status=29
+    )
+
+    assert result.returncode == 29
+    log = (project / "logs" / "scheduler.log").read_text(encoding="utf-8")
+    assert "XRAG_RAN" in log
+    assert "PYTHON_RAN" in log
+
+
+def test_publish_wrapper_calls_publisher_with_exact_resolved_paths(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "project with spaces"
+    package = root / "src" / "xrag"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    record = tmp_path / "record.json"
+    (package / "dashboard_publish.py").write_text(
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "class PagesPublisher:\n"
+        "    def __init__(self, root, worktree):\n"
+        "        self.root, self.worktree = root, worktree\n"
+        "    def publish(self, site):\n"
+        "        Path(os.environ['PUBLISH_RECORD']).write_text(json.dumps([str(self.root), str(self.worktree), str(site)]), encoding='utf-8')\n"
+        "        return {'changed': True, 'branch': 'gh-pages'}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(PUBLISH_WRAPPER), "--root", str(root / ".")],
+        env={**os.environ, "PUBLISH_RECORD": str(record)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"changed": True, "branch": "gh-pages"}
+    assert json.loads(record.read_text(encoding="utf-8")) == [
+        str(root.resolve()),
+        str(root.resolve() / ".worktrees" / "x-rag-pages"),
+        str(root.resolve() / "data" / "dashboard-site"),
+    ]
+
+
+def test_publish_wrapper_rejects_missing_root_without_traceback_or_secret(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "auth_token=wrapper-secret"
+
+    result = subprocess.run(
+        [sys.executable, str(PUBLISH_WRAPPER), "--root", str(missing)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr == "Error: dashboard publication failed\n"
+    assert "wrapper-secret" not in result.stdout + result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Git integration proof")
+def test_windows_python_wrapper_publishes_to_disposable_local_remote(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "native Windows project"
+    remote = tmp_path / "origin.git"
+    root.mkdir()
+    remote.mkdir()
+    assert run_git("init", "--bare", cwd=remote).returncode == 0
+    assert run_git("init", "-b", "main", cwd=root).returncode == 0
+    assert run_git("config", "user.name", "Wrapper Test", cwd=root).returncode == 0
+    assert run_git("config", "user.email", "wrapper@example.invalid", cwd=root).returncode == 0
+    assert run_git("remote", "add", "origin", str(remote), cwd=root).returncode == 0
+    assert run_git("commit", "--allow-empty", "-m", "initial", cwd=root).returncode == 0
+    shutil.copytree(PROJECT_ROOT / "src" / "xrag", root / "src" / "xrag")
+    site = root / "data" / "dashboard-site"
+    (site / "data").mkdir(parents=True)
+    (site / "index.html").write_text("<!doctype html><title>Dashboard</title>", encoding="utf-8")
+    (site / ".nojekyll").write_text("", encoding="utf-8")
+    (site / "data" / "latest.json").write_text("{}", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(PUBLISH_WRAPPER), "--root", str(root)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"changed": True, "branch": "gh-pages"}
+    assert run_git("show", "gh-pages:index.html", cwd=root).stdout == (
+        "<!doctype html><title>Dashboard</title>"
+    )
+    assert run_git("ls-remote", "--exit-code", "--heads", "origin", "refs/heads/gh-pages", cwd=root).returncode == 0
+
+
+def test_readme_documents_hybrid_scheduler_runtime() -> None:
+    readme = PROJECT_ROOT.joinpath("README.md").read_text(encoding="utf-8")
+
+    assert "WSL performs collection and build" in readme
+    assert "Windows Python, Windows Git, and Git Credential Manager" in readme
+    assert "--no-publish" in readme
+    assert "Manual `dashboard update` still publishes by default" in readme
