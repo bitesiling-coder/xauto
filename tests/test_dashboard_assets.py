@@ -92,6 +92,16 @@ def test_dashboard_html_has_semantic_accessible_contract() -> None:
     assert '<link rel="stylesheet" href="assets/styles.css">' in html
 
 
+def test_dashboard_translation_template_and_styles_are_present() -> None:
+    html = _read("index.html")
+    css = _read("assets/styles.css")
+
+    assert 'class="translation-badge" hidden' in html
+    assert ".translation-badge[hidden]" in css
+    assert ".dialog-language-heading" in css
+    assert ".dialog-original" in css
+
+
 def test_dashboard_has_no_inline_data_or_third_party_resources() -> None:
     html = _read("index.html")
     parser = _parse_html()

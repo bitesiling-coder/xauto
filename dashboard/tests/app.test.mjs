@@ -16,6 +16,7 @@ const {
   matchesFilter,
   snapshotUrl,
   sortPosts,
+  translationBadgeState,
 } = await import(moduleUrl);
 
 const TOPICS = [
@@ -156,6 +157,17 @@ test("displayText prefers a nonblank Chinese translation", () => {
     "智能体安全",
   );
   assert.equal(displayText({ text: "Agent security" }), "Agent security");
+});
+
+test("translationBadgeState makes translated lead and cards visibly machine translated", () => {
+  assert.deepEqual(
+    translationBadgeState({ text: "Agent security", text_zh: "智能体安全" }),
+    { label: "机器翻译", hidden: false },
+  );
+  assert.deepEqual(translationBadgeState({ text: "Agent security" }), {
+    label: "机器翻译",
+    hidden: true,
+  });
 });
 
 test("isValidSnapshot accepts only trimmed nonblank Chinese translations", () => {

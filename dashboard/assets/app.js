@@ -211,9 +211,17 @@ function validTranslation(value) {
 }
 
 export function displayText(post) {
-  return typeof post?.text_zh === "string" && post.text_zh.trim()
+  return hasTranslation(post)
     ? post.text_zh
     : post?.text;
+}
+
+export function translationBadgeState(post) {
+  return { label: "机器翻译", hidden: !hasTranslation(post) };
+}
+
+function hasTranslation(post) {
+  return typeof post?.text_zh === "string" && post.text_zh.trim().length > 0;
 }
 
 function validMedia(media) {
@@ -385,6 +393,12 @@ if (typeof document !== "undefined") {
     return link;
   }
 
+  function applyTranslationBadge(badge, post) {
+    const { label, hidden } = translationBadgeState(post);
+    badge.textContent = label;
+    badge.hidden = hidden;
+  }
+
   function dateLabel(value, timezone, includeTime = false) {
     const parsed = new Date(value);
     if (!Number.isFinite(parsed.getTime())) return "时间未知";
@@ -447,6 +461,9 @@ if (typeof document !== "undefined") {
     const kicker = document.createElement("span");
     kicker.className = "lead-kicker";
     kicker.textContent = post.fallback ? `${topicLabel(post)} · 回溯样本` : topicLabel(post);
+    const translationBadge = document.createElement("span");
+    translationBadge.className = "translation-badge";
+    applyTranslationBadge(translationBadge, post);
     const title = document.createElement("h3");
     title.textContent = `@${post.author || "未知作者"} · 今日领衔`;
     const excerpt = document.createElement("p");
@@ -464,7 +481,14 @@ if (typeof document !== "undefined") {
       item.textContent = label;
       meta.append(item);
     }
-    content.append(kicker, title, excerpt, meta, externalLink("查看 X 原帖 ↗", post.url));
+    content.append(
+      kicker,
+      translationBadge,
+      title,
+      excerpt,
+      meta,
+      externalLink("查看 X 原帖 ↗", post.url),
+    );
     elements.lead.replaceChildren(media, content);
   }
 
@@ -532,11 +556,8 @@ if (typeof document !== "undefined") {
     card.querySelector(".topic-pill").textContent = topicLabel(post);
     const fallback = card.querySelector(".fallback-badge");
     fallback.hidden = !post.fallback;
-    const translationBadge = document.createElement("span");
-    translationBadge.className = "translation-badge";
-    translationBadge.textContent = "机器翻译";
-    translationBadge.hidden = !post.text_zh;
-    card.querySelector(".post-topline").append(translationBadge);
+    const translationBadge = card.querySelector(".translation-badge");
+    applyTranslationBadge(translationBadge, post);
     card.querySelector(".post-excerpt").textContent = displayText(post) || "该动态没有文字摘要。";
     card.querySelector(".post-author").textContent = `@${post.author || "未知作者"}`;
     const date = card.querySelector(".post-date");
