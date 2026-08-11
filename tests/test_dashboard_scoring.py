@@ -612,6 +612,31 @@ def test_missing_metric_redistributes_engagement_weight(
     assert result.engagement == pytest.approx(expected)
 
 
+def test_missing_metric_redistributes_weight_per_post_with_mixed_candidates() -> None:
+    ranked = rank_posts(
+        [
+            post("a-likes-only", likes=9),
+            post("z-views-only", views=99),
+            post("zero-engagement"),
+        ],
+        now=NOW,
+        timezone_name="Asia/Singapore",
+        configured_keywords=QUERIES,
+        minimum_today=1,
+    )
+
+    assert {item.post.id: item.engagement for item in ranked} == {
+        "a-likes-only": pytest.approx(1.0),
+        "z-views-only": pytest.approx(1.0),
+        "zero-engagement": pytest.approx(0.0),
+    }
+    assert [item.post.id for item in ranked] == [
+        "a-likes-only",
+        "z-views-only",
+        "zero-engagement",
+    ]
+
+
 def test_sort_ties_by_time_then_stable_post_id() -> None:
     items = [
         post("b", views=1),

@@ -293,20 +293,26 @@ export function bannerForState(snapshot, status, now = Date.now(), refreshed = t
       tone: "warning",
     };
   }
-  if (snapshot?.fallback_used) {
+  const fallbackContext = snapshot?.fallback_used
+    ? "最新窗口样本不足，页面包含已标注的回溯样本。"
+    : "";
+  if (fallbackContext && !refreshed && status === "newer") {
     return { message: "最新窗口样本不足，页面包含已标注的回溯样本。", tone: "warning" };
   }
   if (status === "unchanged") {
-    return { message: "当前已是最新数据。", tone: "default" };
+    return {
+      message: `当前已是最新数据。${fallbackContext}`,
+      tone: fallbackContext ? "warning" : "default",
+    };
   }
   if (status === "newer") {
     return {
-      message: refreshed ? "刷新成功，已载入新数据。" : "已载入最新公开热点快照。",
-      tone: "default",
+      message: `${refreshed ? "刷新成功，已载入新数据。" : "已载入最新公开热点快照。"}${fallbackContext}`,
+      tone: fallbackContext ? "warning" : "default",
     };
   }
   if (status === "failed-with-existing") {
-    return { message: "刷新失败，继续展示上次数据。", tone: "error" };
+    return { message: `刷新失败，继续展示上次数据。${fallbackContext}`, tone: "error" };
   }
   return { message: "暂时无法读取热点数据，请稍后点击“立即刷新”重试。", tone: "error" };
 }

@@ -320,21 +320,23 @@ def _metric(value: int) -> int:
 
 
 def _engagement(post: Post, maximum_views: int, maximum_likes: int) -> float:
+    post_views = _metric(post.views)
+    post_likes = _metric(post.likes)
     views = (
-        math.log1p(_metric(post.views)) / math.log1p(maximum_views)
+        math.log1p(post_views) / math.log1p(maximum_views)
         if maximum_views > 0
         else 0.0
     )
     likes = (
-        math.log1p(_metric(post.likes)) / math.log1p(maximum_likes)
+        math.log1p(post_likes) / math.log1p(maximum_likes)
         if maximum_likes > 0
         else 0.0
     )
-    if maximum_views > 0 and maximum_likes > 0:
+    if post_views > 0 and post_likes > 0:
         return 0.65 * views + 0.35 * likes
-    if maximum_views > 0:
+    if post_views > 0:
         return views
-    if maximum_likes > 0:
+    if post_likes > 0:
         return likes
     return 0.0
 

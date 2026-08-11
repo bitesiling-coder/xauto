@@ -421,7 +421,7 @@ test("loadSnapshotState reports failed when no prior snapshot exists", async () 
   assert.deepEqual(result, { status: "failed", snapshot: null, refreshed: false });
 });
 
-test("bannerForState applies stale then fallback then refresh-result priority", () => {
+test("bannerForState applies stale and refresh-result priority", () => {
   const current = validSnapshot();
   const now = Date.parse("2026-08-10T13:00:00+08:00");
   assert.match(bannerForState(current, "unchanged", now).message, /当前已是最新数据/);
@@ -434,7 +434,10 @@ test("bannerForState applies stale then fallback then refresh-result priority", 
   const fallback = validSnapshot();
   fallback.fallback_used = true;
   fallback.posts[0].fallback = true;
-  assert.match(bannerForState(fallback, "newer", now).message, /回溯样本/);
+  assert.equal(
+    bannerForState(fallback, "newer", now, false).message,
+    "最新窗口样本不足，页面包含已标注的回溯样本。",
+  );
 
   const stale = validSnapshot();
   stale.generated_at = "2026-08-08T00:00:00+08:00";
@@ -449,6 +452,35 @@ test("bannerForState distinguishes initial load from a user refresh", () => {
 
   assert.equal(initial, "已载入最新公开热点快照。");
   assert.equal(refreshed, "刷新成功，已载入新数据。");
+});
+
+test("bannerForState keeps refresh outcomes ahead of fallback context", () => {
+  const fallback = validSnapshot();
+  fallback.fallback_used = true;
+  fallback.posts[0].fallback = true;
+  const now = Date.parse("2026-08-10T13:00:00+08:00");
+
+  const newer = bannerForState(fallback, "newer", now, true);
+  assert.match(newer.message, /^刷新成功，已载入新数据。/);
+  assert.match(newer.message, /回溯样本/);
+
+  const unchanged = bannerForState(fallback, "unchanged", now, true);
+  assert.match(unchanged.message, /^当前已是最新数据。/);
+  assert.match(unchanged.message, /回溯样本/);
+
+  const failed = bannerForState(fallback, "failed-with-existing", now, true);
+  assert.match(failed.message, /^刷新失败，继续展示上次数据。/);
+  assert.match(failed.message, /回溯样本/);
+  assert.equal(failed.tone, "error");
+
+  const failedWithoutRefreshFlag = bannerForState(
+    fallback,
+    "failed-with-existing",
+    now,
+    false,
+  );
+  assert.match(failedWithoutRefreshFlag.message, /^刷新失败，继续展示上次数据。/);
+  assert.match(failedWithoutRefreshFlag.message, /回溯样本/);
 });
 
 test("isStale becomes true only after 26 hours", () => {
