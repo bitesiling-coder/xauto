@@ -332,7 +332,8 @@ class XragService:
             "chunks": 0,
         }
         with writer_lock(self.config.root):
-            before_paths, before_media_hashes = self._source_manifest()
+            before_files = self._source_manifest()
+            allowed_markdown_hashes: dict[str, str] = {}
             for path in sorted(self.markdown.directory.glob("*.md"), key=str):
                 if path.is_symlink() or not path.is_file():
                     continue
@@ -355,7 +356,9 @@ class XragService:
                             fixed_message="translation failed",
                         )
                     if outcome.post != item:
-                        self.markdown.upsert(outcome.post)
+                        updated_path = self.markdown.upsert(outcome.post)
+                        relative = updated_path.relative_to(self.config.root).as_posix()
+                        allowed_markdown_hashes[relative] = self._file_sha256(updated_path)
                         counts["updated_documents"] += 1
                 except Exception as error:
                     counts["errors"] += 1
@@ -376,21 +379,22 @@ class XragService:
                     error,
                     fixed_message="translation index rebuild failed",
                 )
-                self._write_last_run("translation-backfill", counts)
-                return counts
+                self._write_last_run("translation-backfill", counts, outcome="failed")
+                raise RuntimeError("translation index rebuild failed") from None
             counts["chunks"] = rebuild_counts["chunks"]
             if rebuild_counts["errors"]:
                 counts["errors"] += rebuild_counts["errors"]
                 self._write_last_run("translation-backfill", counts)
                 raise RuntimeError("translation index rebuild failed")
 
-            after_paths, after_media_hashes = self._source_manifest()
-            missing = before_paths - after_paths
-            changed_media = any(
-                after_media_hashes.get(path) != digest
-                for path, digest in before_media_hashes.items()
+            after_files = self._source_manifest()
+            missing = set(before_files) - set(after_files)
+            changed_files = any(
+                after_files.get(path)
+                != allowed_markdown_hashes.get(path, digest)
+                for path, digest in before_files.items()
             )
-            if missing or changed_media:
+            if missing or changed_files:
                 counts["missing_source_files"] = len(missing)
                 counts["errors"] += 1
                 self._log_error(
@@ -428,23 +432,21 @@ class XragService:
         except Exception:
             pass
 
-    def _source_manifest(self) -> tuple[set[str], dict[str, str]]:
-        paths: set[str] = set()
-        media_hashes: dict[str, str] = {}
-        for directory, is_media in (
-            (self.config.markdown_dir, False),
-            (self.config.media_dir, True),
-        ):
+    def _source_manifest(self) -> dict[str, str]:
+        files: dict[str, str] = {}
+        for directory in (self.config.markdown_dir, self.config.media_dir):
             if not directory.is_dir():
                 continue
             for path in directory.rglob("*"):
                 if path.is_symlink() or not path.is_file():
                     continue
                 relative = path.relative_to(self.config.root).as_posix()
-                paths.add(relative)
-                if is_media:
-                    media_hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
-        return paths, media_hashes
+                files[relative] = self._file_sha256(path)
+        return files
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def _rebuild_atomic(self) -> dict[str, int]:
         counts = {"documents": 0, "chunks": 0, "errors": 0}
@@ -471,9 +473,10 @@ class XragService:
                     counts["errors"] += 1
                     self._log_error(
                         "rebuild",
-                        str(canonical_path),
+                        canonical_path.name,
                         error,
                         sensitive=self._post_text(item),
+                        fixed_message="rebuild failed",
                     )
 
             if counts["errors"]:
@@ -505,17 +508,32 @@ class XragService:
             return counts
         except Exception as error:
             counts["errors"] += 1
-            self._log_error("rebuild", str(staging or stable), error)
+            self._log_error(
+                "rebuild",
+                "staging-index" if staging is not None else "stable-index",
+                error,
+                fixed_message="rebuild failed",
+            )
             if staging_store is not None:
                 try:
                     self._close_vector_store(staging_store)
                 except Exception as close_error:
-                    self._log_error("rebuild", str(staging or stable), close_error)
+                    self._log_error(
+                        "rebuild",
+                        "staging-index" if staging is not None else "stable-index",
+                        close_error,
+                        fixed_message="rebuild failed",
+                    )
             if staging is not None:
                 try:
                     self._remove_rebuild_path(staging, parent, _STAGING_PREFIX)
                 except Exception as cleanup_error:
-                    self._log_error("rebuild", str(staging), cleanup_error)
+                    self._log_error(
+                        "rebuild",
+                        "staging-index",
+                        cleanup_error,
+                        fixed_message="rebuild failed",
+                    )
             self._write_last_run("rebuild", counts)
             raise
 

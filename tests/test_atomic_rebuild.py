@@ -232,9 +232,10 @@ def test_translate_all_rebuild_exception_records_safe_backfill_result(
         rebuild_factory=WrongCountStore, translation=UpdatingTranslation(),
     )
 
-    result = service.translate_all()
+    with pytest.raises(RuntimeError, match="^translation index rebuild failed$"):
+        service.translate_all()
 
-    assert result == {
+    result = {
         "scanned": 1,
         "translated": 1,
         "reused": 0,
@@ -247,7 +248,77 @@ def test_translate_all_rebuild_exception_records_safe_backfill_result(
     }
     assert (stable / "old-sentinel").read_bytes() == b"old"
     last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
-    assert last_run == {"operation": "translation-backfill", "time": last_run["time"], "counts": result}
+    assert last_run == {
+        "operation": "translation-backfill",
+        "time": last_run["time"],
+        "outcome": "failed",
+        "counts": result,
+    }
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert str(tmp_path) not in errors
+
+
+def test_translate_all_permits_hash_from_its_own_markdown_upsert(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=StagingStore, translation=UpdatingTranslation(),
+    )
+
+    result = service.translate_all()
+
+    assert result["updated_documents"] == 1
+    assert markdown.get("a").source_type == "translated"
+
+
+def test_translate_all_rejects_unexpected_markdown_byte_change(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+
+    class MutatingTranslation:
+        def preflight(self) -> None:
+            pass
+
+        def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+            path = markdown.directory / "a.md"
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("body a", "tampered"),
+                encoding="utf-8",
+            )
+            return TranslationOutcome(item, 0, 1, 0, ())
+
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=StagingStore, translation=MutatingTranslation(),
+    )
+
+    with pytest.raises(RuntimeError, match="^translation backfill removed source data$"):
+        service.translate_all()
+
+
+def test_translate_all_rejects_unexpected_media_byte_change(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    media = tmp_path / "data/media/sentinel.jpg"
+    media.parent.mkdir(parents=True)
+    media.write_bytes(b"original")
+
+    class MutatingMediaTranslation:
+        def preflight(self) -> None:
+            pass
+
+        def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+            media.write_bytes(b"tampered")
+            return TranslationOutcome(item, 0, 1, 0, ())
+
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=StagingStore, translation=MutatingMediaTranslation(),
+    )
+
+    with pytest.raises(RuntimeError, match="^translation backfill removed source data$"):
+        service.translate_all()
 
 
 @pytest.mark.parametrize("failure", ["malformed", "index"])
@@ -302,7 +373,10 @@ def test_factory_failure_preserves_old_cleans_staging_and_records_failure(tmp_pa
     last_run = json.loads((tmp_path / "logs" / "last-run.json").read_text(encoding="utf-8"))
     assert last_run["operation"] == "rebuild"
     assert last_run["counts"] == {"documents": 0, "chunks": 0, "errors": 1}
-    assert "model unavailable" in (tmp_path / "logs" / "errors.jsonl").read_text(encoding="utf-8")
+    errors = (tmp_path / "logs" / "errors.jsonl").read_text(encoding="utf-8")
+    assert "rebuild failed" in errors
+    assert "model unavailable" not in errors
+    assert str(tmp_path) not in errors
 
 
 def test_second_rename_failure_rolls_original_directory_back(
