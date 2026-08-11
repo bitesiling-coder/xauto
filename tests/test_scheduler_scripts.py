@@ -752,9 +752,10 @@ def prepare_wsl_runner(
             if discovered is None:
                 pytest.skip("Windows Python is unavailable through WSL interop")
             windows_python = str(Path(discovered).resolve())
-        require_windows_python_wsl_interop(
-            str(PurePosixPath(windows_python).parent)
-        )
+        if os.name == "nt":
+            require_windows_python_wsl_interop(
+                str(PurePosixPath(windows_python).parent)
+            )
 
     return (
         project,
