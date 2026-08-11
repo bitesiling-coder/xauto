@@ -246,19 +246,46 @@ def test_protected_text_and_failure_are_frozen() -> None:
         failure.reason = "changed"
 
 
-def test_protected_text_copies_replacements_to_an_immutable_tuple() -> None:
-    external = [["XRAG0000TOKEN", "AI Agent"]]
-
+def test_protected_text_replacements_are_an_immutable_tuple() -> None:
     protected = ProtectedText(
         "XRAG0000TOKEN",
-        external,  # type: ignore[arg-type]
+        (("XRAG0000TOKEN", "AI Agent"),),
     )
-    external[0][1] = "changed outside"
-
     assert protected.replacements == (("XRAG0000TOKEN", "AI Agent"),)
     assert not hasattr(protected.replacements, "clear")
     with pytest.raises(TypeError):
         protected.replacements[0] = ("XRAG0000TOKEN", "changed")
+
+
+@pytest.mark.parametrize(
+    ("text", "replacements"),
+    [
+        ("plain", [["XRAG0000TOKEN", "value"]]),
+        ("plain", (["XRAG0000TOKEN", "value"],)),
+        ("plain", (("XRAG0000TOKEN",),)),
+        ("plain", (("not-a-marker", "value"),)),
+        ("plain", (("XRAG0000TOKEN", 123),)),
+        (
+            "XRAG0000TOKEN XRAG0000TOKEN",
+            (
+                ("XRAG0000TOKEN", "first"),
+                ("XRAG0000TOKEN", "second"),
+            ),
+        ),
+        (123, ()),
+    ],
+)
+def test_protected_text_rejects_invalid_manual_construction(
+    text: object,
+    replacements: object,
+) -> None:
+    with pytest.raises(
+        ValueError, match="^protected translation spans were not preserved$"
+    ):
+        ProtectedText(
+            text,  # type: ignore[arg-type]
+            replacements,  # type: ignore[arg-type]
+        )
 
 
 def test_protect_and_restore_large_number_of_tokens() -> None:
@@ -269,6 +296,22 @@ def test_protect_and_restore_large_number_of_tokens() -> None:
     assert isinstance(protected.replacements, tuple)
     assert len(protected.replacements) == 8_000
     assert protected.restore(protected.text) == original
+
+
+def test_more_than_ten_thousand_spans_protect_restore_and_enrich() -> None:
+    text = "``" * 10_001 + " abcdefghijklmno"
+    engine = FakeEngine(lambda texts, _call: [f"中文 {item}" for item in texts])
+
+    assert needs_english_translation(text) is True
+    protected = protect_text(text)
+    assert len(protected.replacements) == 10_001
+    assert protected.restore(protected.text) == text
+
+    outcome = TranslationEnricher(engine).enrich(make_post(text), existing=None)
+
+    assert outcome.translated == 1
+    assert outcome.errors == ()
+    assert outcome.post.text_zh == f"中文 {text}"
 
 
 def test_enrich_batches_main_and_quoted_and_attaches_metadata() -> None:

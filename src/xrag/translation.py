@@ -71,10 +71,22 @@ class ProtectedText:
     replacements: tuple[tuple[str, str], ...]
 
     def __post_init__(self) -> None:
-        immutable = tuple(
-            (marker, original) for marker, original in self.replacements
-        )
-        object.__setattr__(self, "replacements", immutable)
+        if not isinstance(self.text, str) or type(self.replacements) is not tuple:
+            raise ValueError(_RESTORE_ERROR)
+
+        markers: set[str] = set()
+        for replacement in self.replacements:
+            if type(replacement) is not tuple or len(replacement) != 2:
+                raise ValueError(_RESTORE_ERROR)
+            marker, original = replacement
+            if (
+                not isinstance(marker, str)
+                or _MARKER_PATTERN.fullmatch(marker) is None
+                or marker in markers
+                or not isinstance(original, str)
+            ):
+                raise ValueError(_RESTORE_ERROR)
+            markers.add(marker)
 
     def restore(self, translated: str) -> str:
         if not isinstance(translated, str):
@@ -147,8 +159,6 @@ def protect_text(text: str) -> ProtectedText:
     for start, end in selected:
         chunks.append(text[cursor:start])
         while True:
-            if marker_number > 9_999:
-                raise ValueError("too many protected translation spans")
             marker = f"XRAG{marker_number:04d}TOKEN"
             marker_number += 1
             if marker not in original_markers and marker not in used_markers:
