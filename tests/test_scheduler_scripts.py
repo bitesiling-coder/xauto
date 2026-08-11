@@ -424,6 +424,9 @@ def test_windows_daily_launcher_runs_wsl_update_then_native_publisher() -> None:
     assert 'Join-Path $PSScriptRoot "run-daily.sh"' in script
     assert 'Join-Path $PSScriptRoot "publish-dashboard.py"' in script
     assert "& wsl.exe -d $Distribution -e bash $WslRunnerPath --no-publish" in script
+    assert "$previousConsoleOutputEncoding = [Console]::OutputEncoding" in script
+    assert "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)" in script
+    assert "[Console]::OutputEncoding = $previousConsoleOutputEncoding" in script
     assert "Get-Command python.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1" in script
     assert "& $WindowsPython -I -S $PublisherWindowsPath" in script
     assert "scheduler.log" in script

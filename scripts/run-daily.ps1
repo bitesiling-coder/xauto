@@ -22,8 +22,18 @@ try {
         throw "required scheduled runner is unavailable"
     }
 
-    $WslRunnerOutput = @(& wsl.exe -d $Distribution -e wslpath -a $WslRunnerWindowsPath)
-    if ($LASTEXITCODE -ne 0) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $previousConsoleOutputEncoding = [Console]::OutputEncoding
+    try {
+        $ErrorActionPreference = "Continue"
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+        $WslRunnerOutput = @(& wsl.exe -d $Distribution -e wslpath -a $WslRunnerWindowsPath 2> $null)
+        $WslPathExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        [Console]::OutputEncoding = $previousConsoleOutputEncoding
+    }
+    if ($WslPathExitCode -ne 0) {
         throw "WSL runner path translation failed"
     }
     $WslRunnerPath = ($WslRunnerOutput | Out-String).Trim()
