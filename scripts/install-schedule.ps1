@@ -285,9 +285,10 @@ function Get-LinkedWorktreePointerPlan {
 
     $pagesRoot = Join-Path $ProjectRoot '.worktrees\x-rag-pages'
     $pagesMarker = Join-Path $pagesRoot '.git'
-    if (Test-Path -LiteralPath $pagesMarker) {
+    if (Test-Path -LiteralPath $pagesRoot) {
+        Assert-NoReparsePath -Path $pagesRoot -Directory $true -Label 'dedicated pages worktree root'
         if (-not (Test-Path -LiteralPath $pagesMarker -PathType Leaf)) {
-            throw "Unsafe Git pointer metadata: the dedicated pages .git marker is not a regular file."
+            throw "Unsafe Git pointer metadata: the existing pages .git marker is missing or not a regular file."
         }
         $pagesEntry = Get-ValidatedWorktreeEntry `
             -MarkerPath $pagesMarker `
@@ -425,6 +426,34 @@ function Invoke-LinkedWorktreePointerPlan {
     }
 }
 
+function Restore-LinkedWorktreePointerPlan {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Plan)
+
+    $reversePlan = @()
+    foreach ($update in @($Plan | Where-Object { $_.NeedsUpdate })) {
+        Assert-NoReparsePath -Path $update.Path -Directory $false -Label $update.Label
+        $currentBytes = [System.IO.File]::ReadAllBytes($update.Path)
+        if (-not (Test-ByteArraysEqual -Left $currentBytes -Right $update.Desired)) {
+            throw "Git pointer metadata changed before scheduler rollback."
+        }
+        $reversePlan += [pscustomobject]@{
+            Path = $update.Path
+            Label = $update.Label
+            Original = $update.Desired
+            Desired = $update.Original
+            NeedsUpdate = $true
+        }
+    }
+
+    Invoke-LinkedWorktreePointerPlan -Plan $reversePlan
+    foreach ($update in @($Plan | Where-Object { $_.NeedsUpdate })) {
+        $restoredBytes = [System.IO.File]::ReadAllBytes($update.Path)
+        if (-not (Test-ByteArraysEqual -Left $restoredBytes -Right $update.Original)) {
+            throw "Git pointer metadata did not match its original bytes after scheduler rollback."
+        }
+    }
+}
+
 if ($ScheduleTime -notmatch '^(?:[01]\d|2[0-3]):[0-5]\d$') {
     throw "Invalid schedule time '$ScheduleTime'. Expected HH:mm in 24-hour time (for example, 10:00)."
 }
@@ -487,28 +516,42 @@ if ($DryRun) {
     return
 }
 
-Invoke-LinkedWorktreePointerPlan -Plan $PointerPlan
-$RemainingPointerUpdates = @(
-    Get-LinkedWorktreePointerPlan -ProjectRoot $ProjectRoot |
-        Where-Object { $_.NeedsUpdate }
-)
-if ($RemainingPointerUpdates.Count -ne 0) {
-    throw "Git pointer preparation did not produce stable portable metadata."
+$PointersApplied = $false
+try {
+    Invoke-LinkedWorktreePointerPlan -Plan $PointerPlan
+    $PointersApplied = $true
+    $RemainingPointerUpdates = @(
+        Get-LinkedWorktreePointerPlan -ProjectRoot $ProjectRoot |
+            Where-Object { $_.NeedsUpdate }
+    )
+    if ($RemainingPointerUpdates.Count -ne 0) {
+        throw "Git pointer preparation did not produce stable portable metadata."
+    }
+
+    $Action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument $ActionArguments
+    $Trigger = New-ScheduledTaskTrigger -Daily -At $ScheduleTime
+    $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
+    $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $Principal = New-ScheduledTaskPrincipal -UserId $CurrentUser -LogonType Interactive -RunLevel Limited
+
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $Action `
+        -Trigger $Trigger `
+        -Settings $Settings `
+        -Principal $Principal `
+        -Force | Out-Null
+} catch {
+    $schedulerFailure = $_
+    if ($PointersApplied -and $PendingPointerCount -gt 0) {
+        try {
+            Restore-LinkedWorktreePointerPlan -Plan $PointerPlan
+        } catch {
+            throw "Scheduled task installation failed and Git pointer rollback could not be completed safely."
+        }
+    }
+    throw $schedulerFailure
 }
+
 Write-Output "Prepared linked-worktree Git metadata for Windows and WSL ($PendingPointerCount file(s) normalized)."
-
-$Action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument $ActionArguments
-$Trigger = New-ScheduledTaskTrigger -Daily -At $ScheduleTime
-$Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
-$CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$Principal = New-ScheduledTaskPrincipal -UserId $CurrentUser -LogonType Interactive -RunLevel Limited
-
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $Action `
-    -Trigger $Trigger `
-    -Settings $Settings `
-    -Principal $Principal `
-    -Force | Out-Null
-
 Write-Output "Installed scheduled task '$TaskName' for $ScheduleTime daily."

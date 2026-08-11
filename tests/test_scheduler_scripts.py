@@ -104,17 +104,34 @@ def create_linked_scheduler_repo(tmp_path: Path, *, with_pages: bool = True) -> 
     return main, feature, pages
 
 
-def run_stubbed_installer(project: Path, *, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
+def run_stubbed_installer(
+    project: Path,
+    *,
+    dry_run: bool = False,
+    scheduler_failure: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     installer = project / "scripts" / INSTALLER.name
     runner = project / "scripts" / RUNNER.name
     wsl_runner = translate_with_wsl(runner)
-    scheduler_stubs = (
-        "function global:New-ScheduledTaskAction { param($Execute, $Argument); [pscustomobject]@{} }; "
-        "function global:New-ScheduledTaskTrigger { param([switch]$Daily, $At); [pscustomobject]@{} }; "
-        "function global:New-ScheduledTaskSettingsSet { param([switch]$StartWhenAvailable, $MultipleInstances); [pscustomobject]@{} }; "
-        "function global:New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel); [pscustomobject]@{} }; "
-        "function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force); "
-        "$global:Registered = $true }; "
+    failure = "throw 'INJECTED SCHEDULER FAILURE'"
+    scheduler_stubs = "".join(
+        (
+            "function global:New-ScheduledTaskAction { param($Execute, $Argument); "
+            + (failure if scheduler_failure == "action" else "[pscustomobject]@{}")
+            + " }; ",
+            "function global:New-ScheduledTaskTrigger { param([switch]$Daily, $At); "
+            + (failure if scheduler_failure == "trigger" else "[pscustomobject]@{}")
+            + " }; ",
+            "function global:New-ScheduledTaskSettingsSet { param([switch]$StartWhenAvailable, $MultipleInstances); "
+            + (failure if scheduler_failure == "settings" else "[pscustomobject]@{}")
+            + " }; ",
+            "function global:New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel); "
+            + (failure if scheduler_failure == "principal" else "[pscustomobject]@{}")
+            + " }; ",
+            "function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force); "
+            + (failure if scheduler_failure == "register" else "$global:Registered = $true")
+            + " }; ",
+        )
     )
     command = (
         f"function global:wsl.exe {{ $global:LASTEXITCODE = 0; {ps_literal(wsl_runner)} }}; "
@@ -152,6 +169,12 @@ def overwrite_git_pointer(path: Path, content: bytes) -> None:
     path.write_bytes(content)
     if os.name == "nt" and path.name == ".git":
         subprocess.run(["attrib", "+H", str(path)], capture_output=True, check=True)
+
+
+def remove_git_pointer(path: Path) -> None:
+    if os.name == "nt":
+        subprocess.run(["attrib", "-H", str(path)], capture_output=True, check=True)
+    path.unlink()
 
 
 def test_installer_prepares_real_linked_worktrees_for_windows_and_wsl_git(tmp_path: Path) -> None:
@@ -305,6 +328,51 @@ def test_installer_prepares_linked_project_when_pages_worktree_is_absent(tmp_pat
     assert not pages.exists()
     assert run_git("status", "--short", cwd=feature).returncode == 0
     assert run_wsl_git(feature, "status", "--short").returncode == 0
+
+
+@pytest.mark.parametrize("failure_at", ["action", "trigger", "settings", "principal", "register"])
+def test_installer_rolls_back_all_pointer_bytes_when_scheduler_registration_fails(
+    tmp_path: Path,
+    failure_at: str,
+) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+    before_bytes = pointer_bytes(main, feature, pages)
+    before_wsl = {
+        (worktree, args): run_wsl_git(worktree, *args).returncode
+        for worktree in (feature, pages)
+        for args in (("rev-parse", "--show-toplevel"), ("status", "--short"), ("worktree", "list", "--porcelain"))
+    }
+
+    result = run_stubbed_installer(feature, scheduler_failure=failure_at)
+
+    assert result.returncode != 0
+    assert "INJECTED SCHEDULER FAILURE" in result.stdout + result.stderr
+    assert "REGISTERED" not in result.stdout
+    assert pointer_bytes(main, feature, pages) == before_bytes
+    assert list(tmp_path.rglob("*.xrag-scheduler-*")) == []
+    for worktree in (feature, pages):
+        for args in (("rev-parse", "--show-toplevel"), ("status", "--short"), ("worktree", "list", "--porcelain")):
+            assert run_git(*args, cwd=worktree).returncode == 0
+            assert run_wsl_git(worktree, *args).returncode == before_wsl[(worktree, args)]
+
+
+def test_installer_rejects_existing_pages_root_without_git_marker_and_preserves_sentinel(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+    remove_git_pointer(pages / ".git")
+    sentinel = pages / "keep-me.txt"
+    sentinel.write_bytes(b"do not change or delete\n")
+    before = pointer_bytes(main, feature, None)
+
+    result = run_stubbed_installer(feature)
+
+    assert result.returncode != 0
+    assert "pages .git marker" in result.stdout + result.stderr
+    assert "REGISTERED" not in result.stdout
+    assert pointer_bytes(main, feature, None) == before
+    assert sentinel.read_bytes() == b"do not change or delete\n"
+    assert not (pages / ".git").exists()
 
 
 def test_readme_explains_cross_platform_pointer_scope() -> None:
