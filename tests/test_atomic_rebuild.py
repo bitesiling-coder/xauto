@@ -11,6 +11,7 @@ from xrag.markdown_store import MarkdownStore
 from xrag.models import Post
 import xrag.service as service_module
 from xrag.service import XragService
+from xrag.translation import TranslationOutcome
 
 
 def configuration(root: Path) -> AppConfig:
@@ -54,6 +55,19 @@ class StagingStore:
         self.closed = True
 
 
+class ReuseTranslation:
+    def __init__(self) -> None:
+        self.preflight_calls = 0
+        self.calls: list[tuple[Post, Post | None]] = []
+
+    def preflight(self) -> None:
+        self.preflight_calls += 1
+
+    def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+        self.calls.append((item, existing))
+        return TranslationOutcome(item, 0, 1, 0, ())
+
+
 def sibling_workdirs(stable: Path) -> list[Path]:
     return sorted(stable.parent.glob(".xrag-chroma-*"), key=str)
 
@@ -85,6 +99,48 @@ def test_atomic_rebuild_replaces_unopened_corrupt_old_directory(tmp_path: Path) 
     assert [item[0] for item in stores[0].indexed] == ["a", "b"]
     assert all(path.is_absolute() for _, path in stores[0].indexed)
     assert sibling_workdirs(stable) == []
+
+
+def test_translate_all_reuses_existing_posts_rebuilds_once_and_preserves_media(
+    tmp_path: Path,
+) -> None:
+    stores: list[StagingStore] = []
+
+    def factory(path: Path) -> StagingStore:
+        store = StagingStore(path)
+        stores.append(store)
+        return store
+
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    media = tmp_path / "data/media/sentinel.jpg"
+    media.parent.mkdir(parents=True)
+    media.write_bytes(b"do not alter")
+    translation = ReuseTranslation()
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=factory, translation=translation,
+    )
+
+    result = service.translate_all()
+
+    assert result == {
+        "scanned": 1,
+        "translated": 0,
+        "reused": 1,
+        "skipped": 0,
+        "errors": 0,
+        "updated_documents": 0,
+        "missing_source_files": 0,
+        "chunks": 2,
+    }
+    assert translation.preflight_calls == 1
+    assert translation.calls[0][0] == translation.calls[0][1]
+    assert len(stores) == 1
+    assert media.read_bytes() == b"do not alter"
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run["operation"] == "translation-backfill"
+    assert last_run["counts"] == result
 
 
 @pytest.mark.parametrize("failure", ["malformed", "index"])

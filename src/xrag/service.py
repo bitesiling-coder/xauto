@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from .config import AppConfig
 from .importers import load_posts
 from .locking import writer_lock
 from .markdown_store import MarkdownStore
+from .translation import TranslationEnricher, TranslationOutcome
 
 
 _IMPORT_EXTENSIONS = {".yaml", ".yml", ".json", ".md"}
@@ -53,6 +55,7 @@ class XragService:
         vectors: Any,
         *,
         media: Any | None = None,
+        translation: TranslationEnricher | None = None,
         vector_factory: Callable[[Path], Any] | None = None,
         rebuild_factory: Callable[[Path], Any] | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -63,6 +66,7 @@ class XragService:
         self.markdown = markdown
         self.vectors = vectors
         self.media = media
+        self.translation = translation
         self._vector_factory = vector_factory
         self._rebuild_factory = rebuild_factory
         self._sleep = sleep
@@ -70,6 +74,11 @@ class XragService:
 
     def collect(self, keyword: str, limit: int | None = None) -> dict[str, int]:
         effective_limit = self.config.limit_per_keyword if limit is None else limit
+        try:
+            self._translation_preflight()
+        except Exception as error:
+            self._record_collect_failure(keyword, error, translation=True)
+            raise RuntimeError("translation unavailable") from None
         try:
             search_batch = getattr(self.opencli, "search_batch", None)
             if callable(search_batch):
@@ -88,6 +97,7 @@ class XragService:
             "stored": 0,
             "chunks": 0,
             "errors": len(rejections),
+            **self._translation_counts(),
         }
         with writer_lock(self.config.root):
             for rejection in rejections:
@@ -103,6 +113,8 @@ class XragService:
                     try:
                         self.markdown.validate_target(self._post_id(item))
                         item = self._archive_media(item, counts)
+                        existing = self.markdown.get(self._post_id(item))
+                        item = self._enrich_item(item, existing, counts)
                         path = self.markdown.upsert(item)
                         counts["stored"] += 1
                         counts["chunks"] += vectors.index_post(item, path)
@@ -125,8 +137,18 @@ class XragService:
                 self._sleep(self.config.delay_seconds)
         return results
 
-    def _record_collect_failure(self, keyword: str, error: Exception) -> None:
-        counts = {"found": 0, "stored": 0, "chunks": 0, "errors": 1}
+    def _record_collect_failure(
+        self, keyword: str, error: Exception, *, translation: bool = False
+    ) -> None:
+        counts = {
+            "found": 0,
+            "stored": 0,
+            "chunks": 0,
+            "errors": 1,
+            **self._translation_counts(),
+        }
+        if translation:
+            counts["translation_errors"] = 1
         try:
             with writer_lock(self.config.root):
                 try:
@@ -142,15 +164,26 @@ class XragService:
                     "collect",
                     keyword,
                     error,
-                    fixed_message="search failed",
+                    fixed_message=("translation unavailable" if translation else "search failed"),
                 )
         except Exception:
             pass
 
     def import_path(self, source: Path) -> dict[str, int]:
         source = Path(source)
+        try:
+            self._translation_preflight()
+        except Exception as error:
+            self._record_import_failure(error)
+            raise RuntimeError("translation unavailable") from None
         files = self._import_files(source)
-        counts = {"files": len(files), "imported": 0, "chunks": 0, "errors": 0}
+        counts = {
+            "files": len(files),
+            "imported": 0,
+            "chunks": 0,
+            "errors": 0,
+            **self._translation_counts(),
+        }
         with writer_lock(self.config.root):
             with self._vector_session() as vectors:
                 for path in files:
@@ -165,6 +198,8 @@ class XragService:
                         try:
                             self.markdown.validate_target(self._post_id(item))
                             item = self._archive_media(item, counts)
+                            existing = self.markdown.get(self._post_id(item))
+                            item = self._enrich_item(item, existing, counts)
                             markdown_path = self.markdown.upsert(item)
                             counts["imported"] += 1
                             counts["chunks"] += vectors.index_post(item, markdown_path)
@@ -178,6 +213,63 @@ class XragService:
                             )
                 self._write_last_run("import", counts)
         return counts
+
+    @staticmethod
+    def _translation_counts() -> dict[str, int]:
+        return {
+            "translated": 0,
+            "translation_reused": 0,
+            "translation_skipped": 0,
+            "translation_errors": 0,
+        }
+
+    def _translation_preflight(self) -> None:
+        if self.translation is not None:
+            self.translation.preflight()
+
+    def _record_import_failure(self, error: Exception) -> None:
+        counts = {
+            "files": 0,
+            "imported": 0,
+            "chunks": 0,
+            "errors": 1,
+            **self._translation_counts(),
+            "translation_errors": 1,
+        }
+        try:
+            with writer_lock(self.config.root):
+                try:
+                    self._write_last_run("import", counts, outcome="failed")
+                except Exception:
+                    pass
+                self._log_error(
+                    "import",
+                    "translation",
+                    error,
+                    fixed_message="translation unavailable",
+                )
+        except Exception:
+            pass
+
+    def _enrich_item(
+        self, item: Any, existing: Any | None, counts: dict[str, int]
+    ) -> Any:
+        if self.translation is None:
+            return item
+        outcome: TranslationOutcome = self.translation.enrich(item, existing)
+        counts["translated"] += outcome.translated
+        counts["translation_reused"] += outcome.reused
+        counts["translation_skipped"] += outcome.skipped
+        for failure in outcome.errors:
+            counts["translation_errors"] += 1
+            counts["errors"] += 1
+            self._log_error(
+                "translation",
+                f"{self._post_id(item)}:{failure.owner}",
+                RuntimeError("translation failed"),
+                fixed_message="translation failed",
+            )
+        return outcome.post
 
     def _archive_media(self, item: Any, counts: dict[str, int]) -> Any:
         if self.media is None:
@@ -218,6 +310,140 @@ class XragService:
             raise RuntimeError("Atomic rebuild requires a rebuild factory")
         with writer_lock(self.config.root):
             return self._rebuild_atomic()
+
+    def translate_all(self) -> dict[str, int]:
+        if self.translation is None:
+            raise RuntimeError("translation unavailable")
+        try:
+            self.translation.preflight()
+        except Exception as error:
+            self._record_translation_backfill_failure(error)
+            raise RuntimeError("translation unavailable") from None
+
+        counts = {
+            "scanned": 0,
+            "translated": 0,
+            "reused": 0,
+            "skipped": 0,
+            "errors": 0,
+            "updated_documents": 0,
+            "missing_source_files": 0,
+            "chunks": 0,
+        }
+        with writer_lock(self.config.root):
+            before_paths, before_media_hashes = self._source_manifest()
+            for path in sorted(self.markdown.directory.glob("*.md"), key=str):
+                if path.is_symlink() or not path.is_file():
+                    continue
+                counts["scanned"] += 1
+                item: Any | None = None
+                try:
+                    canonical_path = path.resolve()
+                    item = self.markdown.read(canonical_path)
+                    outcome: TranslationOutcome = self.translation.enrich(item, item)
+                    counts["translated"] += outcome.translated
+                    counts["reused"] += outcome.reused
+                    counts["skipped"] += outcome.skipped
+                    for failure in outcome.errors:
+                        counts["errors"] += 1
+                        self._log_error(
+                            "translation",
+                            f"{self._post_id(item)}:{failure.owner}",
+                            RuntimeError("translation failed"),
+                            fixed_message="translation failed",
+                        )
+                    if outcome.post != item:
+                        self.markdown.upsert(outcome.post)
+                        counts["updated_documents"] += 1
+                except Exception as error:
+                    counts["errors"] += 1
+                    self._log_error(
+                        "translation-backfill",
+                        self._post_id(item) if item is not None else path.name,
+                        error,
+                        sensitive=self._post_text(item),
+                    )
+
+            try:
+                rebuild_counts = self._rebuild_atomic()
+                counts["chunks"] = rebuild_counts["chunks"]
+                if rebuild_counts["errors"]:
+                    counts["errors"] += rebuild_counts["errors"]
+                    self._write_last_run("translation-backfill", counts)
+                    raise RuntimeError("translation index rebuild failed")
+            except RuntimeError:
+                raise
+            except Exception as error:
+                counts["errors"] += 1
+                self._log_error(
+                    "translation-backfill",
+                    "index",
+                    error,
+                    fixed_message="translation index rebuild failed",
+                )
+                self._write_last_run("translation-backfill", counts)
+                raise RuntimeError("translation index rebuild failed") from None
+
+            after_paths, after_media_hashes = self._source_manifest()
+            missing = before_paths - after_paths
+            changed_media = any(
+                after_media_hashes.get(path) != digest
+                for path, digest in before_media_hashes.items()
+            )
+            if missing or changed_media:
+                counts["missing_source_files"] = len(missing)
+                counts["errors"] += 1
+                self._log_error(
+                    "translation-backfill",
+                    "source-data",
+                    RuntimeError("translation backfill removed source data"),
+                    fixed_message="translation backfill removed source data",
+                )
+                self._write_last_run("translation-backfill", counts)
+                raise RuntimeError("translation backfill removed source data")
+            self._write_last_run("translation-backfill", counts)
+            return counts
+
+    def _record_translation_backfill_failure(self, error: Exception) -> None:
+        counts = {
+            "scanned": 0,
+            "translated": 0,
+            "reused": 0,
+            "skipped": 0,
+            "errors": 1,
+            "updated_documents": 0,
+            "missing_source_files": 0,
+            "chunks": 0,
+        }
+        try:
+            with writer_lock(self.config.root):
+                self._write_last_run("translation-backfill", counts, outcome="failed")
+                self._log_error(
+                    "translation-backfill",
+                    "translation",
+                    error,
+                    fixed_message="translation unavailable",
+                )
+        except Exception:
+            pass
+
+    def _source_manifest(self) -> tuple[set[str], dict[str, str]]:
+        paths: set[str] = set()
+        media_hashes: dict[str, str] = {}
+        for directory, is_media in (
+            (self.config.markdown_dir, False),
+            (self.config.media_dir, True),
+        ):
+            if not directory.is_dir():
+                continue
+            for path in directory.rglob("*"):
+                if path.is_symlink() or not path.is_file():
+                    continue
+                relative = path.relative_to(self.config.root).as_posix()
+                paths.add(relative)
+                if is_media:
+                    media_hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return paths, media_hashes
 
     def _rebuild_atomic(self) -> dict[str, int]:
         counts = {"documents": 0, "chunks": 0, "errors": 0}

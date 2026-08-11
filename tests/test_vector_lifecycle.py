@@ -71,6 +71,10 @@ def test_collect_searches_remotely_before_lock_and_uses_vectors_only_inside(
         "stored": 1,
         "chunks": 1,
         "errors": 0,
+        "translated": 0,
+        "translation_reused": 0,
+        "translation_skipped": 0,
+        "translation_errors": 0,
     }
     assert events == [
         "remote-search",

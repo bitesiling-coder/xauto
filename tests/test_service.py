@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
+import hashlib
 import json
 import subprocess
 import sys
@@ -14,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from xrag.config import AppConfig
 from xrag.markdown_store import MarkdownStore
 from xrag.media_store import MediaArchiveResult, MediaFailure, MediaStore
-from xrag.models import LocalMedia, Post
+from xrag.models import LocalMedia, Post, TranslationMetadata
 from xrag.opencli import OpenCLIClient, OpenCLIError, SearchBatch, SearchRejection
+from xrag.translation import TranslationFailure, TranslationOutcome
 import xrag.service as service_module
 from xrag.service import XragService
 
@@ -85,6 +87,31 @@ class Media:
         return self.result or MediaArchiveResult(item, ())
 
 
+class FakeTranslation:
+    def __init__(
+        self,
+        *,
+        events: list[str] | None = None,
+        fail_preflight: bool = False,
+        outcomes: dict[str, TranslationOutcome] | None = None,
+    ) -> None:
+        self.events = events if events is not None else []
+        self.fail_preflight = fail_preflight
+        self.outcomes = outcomes or {}
+        self.calls: list[tuple[Post, Post | None]] = []
+
+    def preflight(self) -> None:
+        self.events.append("preflight")
+        if self.fail_preflight:
+            raise RuntimeError("translation engine secret source body")
+
+    def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+        self.calls.append((item, existing))
+        return self.outcomes.get(
+            item.id, TranslationOutcome(item, 0, 0, 1, ())
+        )
+
+
 def config(root: Path, keywords: tuple[str, ...] = ("AI", "GPU")) -> AppConfig:
     return AppConfig(root, False, "03:00", "UTC", 7, 3, keywords, "model")
 
@@ -112,6 +139,144 @@ def make_service(
     )
 
 
+def translation_counts(**values: int) -> dict[str, int]:
+    return {
+        "errors": 0,
+        "translated": 0,
+        "translation_reused": 0,
+        "translation_skipped": 0,
+        "translation_errors": 0,
+        **values,
+    }
+
+
+def test_collect_preflights_before_search_and_indexes_enriched_post(tmp_path: Path) -> None:
+    events: list[str] = []
+
+    class ObservedOpenCLI(OpenCLI):
+        def search(self, keyword: str, limit: int) -> list[Post]:
+            events.append("search")
+            return super().search(keyword, limit)
+
+    original = post("one", "source body")
+    enriched = replace(
+        original,
+        text_zh="中文译文",
+        translation_zh=TranslationMetadata(
+            "zh-CN", "fake", "v1", hashlib.sha256(b"source body").hexdigest(), "2026-08-09T00:00:00Z"
+        ),
+    )
+    translation = FakeTranslation(
+        events=events,
+        outcomes={"one": TranslationOutcome(enriched, 1, 0, 0, ())},
+    )
+    vectors = Vectors()
+    service = XragService(
+        config(tmp_path),
+        ObservedOpenCLI([original]),
+        MarkdownStore(tmp_path / "data/markdown"),
+        vectors,
+        translation=translation,
+    )
+
+    result = service.collect("AI")
+
+    assert events[:2] == ["preflight", "search"]
+    assert result == translation_counts(found=1, stored=1, chunks=2, translated=1)
+    assert service.markdown.get("one") == enriched
+    assert vectors.indexed == ["one"]
+
+
+def test_collect_translation_preflight_failure_writes_no_content_and_logs_safely(
+    tmp_path: Path,
+) -> None:
+    client = OpenCLI([post("one", "RECOGNIZABLE SOURCE BODY")])
+    vectors = Vectors()
+    service = XragService(
+        config(tmp_path), client, MarkdownStore(tmp_path / "data/markdown"), vectors,
+        translation=FakeTranslation(fail_preflight=True),
+        clock=lambda: "2026-08-09T12:00:00Z",
+    )
+
+    with pytest.raises(RuntimeError, match="translation unavailable"):
+        service.collect("AI")
+
+    assert client.calls == []
+    assert vectors.indexed == []
+    assert not (tmp_path / "data/markdown").exists()
+    assert json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))["counts"] == translation_counts(found=0, stored=0, chunks=0, errors=1, translation_errors=1)
+    assert "RECOGNIZABLE" not in (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+
+
+def test_import_preflights_before_read_and_translation_failure_keeps_original(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "input.json"
+    source.write_text('[{"id":"one","text":"source body"}]', encoding="utf-8")
+    original = post("one", "source body")
+    events: list[str] = []
+    translation = FakeTranslation(
+        events=events,
+        outcomes={"one": TranslationOutcome(original, 0, 0, 0, (TranslationFailure("post", "translation failed"),))}
+    )
+    real_load_posts = service_module.load_posts
+
+    def observed_load_posts(path: Path) -> list[Post]:
+        events.append("read")
+        return real_load_posts(path)
+
+    monkeypatch.setattr(service_module, "load_posts", observed_load_posts)
+    service = XragService(
+        config(tmp_path), object(), MarkdownStore(tmp_path / "data/markdown"), Vectors(),
+        translation=translation,
+    )
+
+    result = service.import_path(source)
+
+    assert events[:2] == ["preflight", "read"]
+    assert translation.calls[0][0].id == "one"
+    assert result == translation_counts(files=1, imported=1, chunks=2, errors=1, translation_errors=1)
+    assert service.markdown.get("one").text == "source body"
+    log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert '"operation":"translation"' in log
+    assert "source body" not in log
+
+
+def test_import_translation_preflight_failure_does_not_read_or_write_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "input.json"
+    source.write_text('[{"id":"one","text":"RECOGNIZABLE SOURCE BODY"}]', encoding="utf-8")
+    read = False
+
+    def reject_read(path: Path) -> list[Post]:
+        nonlocal read
+        read = True
+        raise AssertionError("source must not be read")
+
+    monkeypatch.setattr(service_module, "load_posts", reject_read)
+    vectors = Vectors()
+    service = XragService(
+        config(tmp_path), object(), MarkdownStore(tmp_path / "data/markdown"), vectors,
+        translation=FakeTranslation(fail_preflight=True),
+    )
+
+    with pytest.raises(RuntimeError, match="translation unavailable"):
+        service.import_path(source)
+
+    assert not read
+    assert vectors.indexed == []
+    assert not (tmp_path / "data/markdown").exists()
+    assert "RECOGNIZABLE" not in (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+
+
+def test_translate_all_requires_translation(tmp_path: Path) -> None:
+    service = make_service(tmp_path, OpenCLI(), Vectors())
+
+    with pytest.raises(RuntimeError, match="translation unavailable"):
+        service.translate_all()
+
+
 def test_collect_archives_before_markdown_and_vectors(tmp_path: Path) -> None:
     original = post("123")
     archived = replace(
@@ -132,7 +297,7 @@ def test_collect_archives_before_markdown_and_vectors(tmp_path: Path) -> None:
 
     result = service.collect("AI")
 
-    assert result == {"found": 1, "stored": 1, "chunks": 2, "errors": 0}
+    assert result == translation_counts(found=1, stored=1, chunks=2)
     assert media.archived == [original]
     assert service.markdown.get("123") == archived
 
@@ -157,7 +322,7 @@ def test_media_failure_is_logged_but_text_is_stored(tmp_path: Path) -> None:
 
     result = service.collect("AI")
 
-    assert result == {"found": 1, "stored": 1, "chunks": 2, "errors": 1}
+    assert result == translation_counts(found=1, stored=1, chunks=2, errors=1)
     assert service.markdown.get("123") is not None
     errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
     assert "TimeoutError" in errors
@@ -174,7 +339,7 @@ def test_unexpected_media_exception_does_not_block_text_storage(tmp_path: Path) 
 
     result = service.collect("AI")
 
-    assert result == {"found": 1, "stored": 1, "chunks": 2, "errors": 1}
+    assert result == translation_counts(found=1, stored=1, chunks=2, errors=1)
     assert service.markdown.get("123") is not None
     errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
     assert "media archival failed" in errors
@@ -213,7 +378,7 @@ def test_casefold_collision_is_rejected_before_media_archival(tmp_path: Path) ->
 
     result = service.collect("AI")
 
-    assert result == {"found": 1, "stored": 0, "chunks": 0, "errors": 1}
+    assert result == translation_counts(found=1, stored=0, chunks=0, errors=1)
     assert media.archived == []
     assert existing_media.read_bytes() == b"preserve"
 
@@ -234,7 +399,7 @@ def test_import_non_x_media_counts_failure_but_keeps_text(tmp_path: Path) -> Non
 
     result = service.import_path(source)
 
-    assert result == {"files": 1, "imported": 1, "chunks": 2, "errors": 1}
+    assert result == translation_counts(files=1, imported=1, chunks=2, errors=1)
     assert service.markdown.get("imported") is not None
 
 
@@ -246,7 +411,7 @@ def test_collect_stores_before_indexing_continues_after_index_error_and_writes_s
 
     result = service.collect("AI", limit=2)
 
-    assert result == {"found": 2, "stored": 2, "chunks": 2, "errors": 1}
+    assert result == translation_counts(found=2, stored=2, chunks=2, errors=1)
     assert vectors.indexed == ["bad", "good"]
     assert (tmp_path / "data/markdown/bad.md").exists()
     last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
@@ -276,7 +441,7 @@ def test_collect_counts_and_logs_rejected_rows_without_storing_or_indexing_them(
 
     result = service.collect("AI")
 
-    assert result == {"found": 2, "stored": 1, "chunks": 2, "errors": 1}
+    assert result == translation_counts(found=2, stored=1, chunks=2, errors=1)
     assert client.calls == [("AI", 7)]
     assert vectors.indexed == ["valid"]
     assert sorted(path.name for path in service.markdown.directory.glob("*.md")) == [
@@ -321,7 +486,7 @@ def test_collect_persists_sanitized_failed_run_before_reraising_search_error(
         "time": "2026-08-09T12:00:00Z",
         "keyword": "later-keyword",
         "outcome": "failed",
-        "counts": {"found": 0, "stored": 0, "chunks": 0, "errors": 1},
+        "counts": translation_counts(found=0, stored=0, chunks=0, errors=1),
     }
     error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
     assert "later-keyword" in error_log
@@ -353,12 +518,9 @@ def test_collect_logs_only_row_index_for_a_rejected_secret_bearing_id(
         vectors,
     )
 
-    assert service.collect("AI") == {
-        "found": 2,
-        "stored": 1,
-        "chunks": 2,
-        "errors": 1,
-    }
+    assert service.collect("AI") == translation_counts(
+        found=2, stored=1, chunks=2, errors=1
+    )
     assert vectors.indexed == ["123"]
     assert sorted(path.name for path in service.markdown.directory.glob("*.md")) == [
         "123.md"
@@ -463,12 +625,9 @@ def test_collect_all_records_later_failure_and_does_not_sleep_or_continue(
     last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
     assert last_run["keyword"] == "two"
     assert last_run["outcome"] == "failed"
-    assert last_run["counts"] == {
-        "found": 0,
-        "stored": 0,
-        "chunks": 0,
-        "errors": 1,
-    }
+    assert last_run["counts"] == translation_counts(
+        found=0, stored=0, chunks=0, errors=1
+    )
 
 
 def test_collect_preserves_an_explicit_zero_limit(tmp_path: Path) -> None:
@@ -497,7 +656,7 @@ def test_error_log_failure_is_best_effort_and_does_not_stop_later_posts(
         MarkdownStore(tmp_path / "data/markdown"), vectors,
     )
 
-    assert service.collect("AI") == {"found": 2, "stored": 2, "chunks": 2, "errors": 1}
+    assert service.collect("AI") == translation_counts(found=2, stored=2, chunks=2, errors=1)
     assert service.append_attempts == 1
     assert vectors.indexed == ["bad", "good"]
 
@@ -566,7 +725,7 @@ def test_import_directory_sorts_files_rejects_partial_bad_file_and_skips_canonic
 
     result = service.import_path(source)
 
-    assert result == {"files": 2, "imported": 1, "chunks": 2, "errors": 1}
+    assert result == translation_counts(files=2, imported=1, chunks=2, errors=1)
     assert vectors.indexed == ["b"]
     assert not (canonical / "would-be-partial.md").exists()
     error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
@@ -602,7 +761,7 @@ def test_import_uses_injected_markdown_directory_for_exclusion_and_rejects_it_as
     vectors = Vectors()
     service = XragService(config(tmp_path), OpenCLI(), markdown, vectors)
 
-    assert service.import_path(source) == {"files": 1, "imported": 1, "chunks": 2, "errors": 0}
+    assert service.import_path(source) == translation_counts(files=1, imported=1, chunks=2)
     assert vectors.indexed == ["valid"]
     with pytest.raises(ValueError, match="canonical Markdown"):
         service.import_path(generated)
@@ -613,7 +772,7 @@ def test_import_single_file_and_clear_validation_errors(tmp_path: Path) -> None:
     source.write_text("id: one\ntext: hello\n", encoding="utf-8")
     service = make_service(tmp_path, OpenCLI(), Vectors())
 
-    assert service.import_path(source) == {"files": 1, "imported": 1, "chunks": 2, "errors": 0}
+    assert service.import_path(source) == translation_counts(files=1, imported=1, chunks=2)
     with pytest.raises(ValueError, match="does not exist"):
         service.import_path(tmp_path / "missing")
     unsupported = tmp_path / "notes.txt"
@@ -644,12 +803,9 @@ def test_import_error_log_removes_secrets_and_body_from_multiline_parser_error(
     )
     service = make_service(tmp_path, OpenCLI(), Vectors())
 
-    assert service.import_path(source) == {
-        "files": 1,
-        "imported": 0,
-        "chunks": 0,
-        "errors": 1,
-    }
+    assert service.import_path(source) == translation_counts(
+        files=1, imported=0, chunks=0, errors=1
+    )
 
     errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
     [record] = [json.loads(line) for line in errors.splitlines()]
