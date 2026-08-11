@@ -198,11 +198,30 @@ function validPost(post, topics) {
     validCount(post.views) &&
     validScore(post.score) &&
     typeof post.fallback === "boolean" &&
+    (!Object.hasOwn(post, "text_zh") || validTranslation(post.text_zh)) &&
     Array.isArray(post.keywords) &&
     post.keywords.every((keyword) => typeof keyword === "string") &&
     Array.isArray(post.media) &&
     post.media.every(validMedia)
   );
+}
+
+function validTranslation(value) {
+  return typeof value === "string" && value.length > 0 && value === value.trim();
+}
+
+export function displayText(post) {
+  return hasTranslation(post)
+    ? post.text_zh
+    : post?.text;
+}
+
+export function translationBadgeState(post) {
+  return { label: "机器翻译", hidden: !hasTranslation(post) };
+}
+
+function hasTranslation(post) {
+  return typeof post?.text_zh === "string" && post.text_zh.trim().length > 0;
 }
 
 function validMedia(media) {
@@ -374,6 +393,12 @@ if (typeof document !== "undefined") {
     return link;
   }
 
+  function applyTranslationBadge(badge, post) {
+    const { label, hidden } = translationBadgeState(post);
+    badge.textContent = label;
+    badge.hidden = hidden;
+  }
+
   function dateLabel(value, timezone, includeTime = false) {
     const parsed = new Date(value);
     if (!Number.isFinite(parsed.getTime())) return "时间未知";
@@ -436,11 +461,14 @@ if (typeof document !== "undefined") {
     const kicker = document.createElement("span");
     kicker.className = "lead-kicker";
     kicker.textContent = post.fallback ? `${topicLabel(post)} · 回溯样本` : topicLabel(post);
+    const translationBadge = document.createElement("span");
+    translationBadge.className = "translation-badge";
+    applyTranslationBadge(translationBadge, post);
     const title = document.createElement("h3");
     title.textContent = `@${post.author || "未知作者"} · 今日领衔`;
     const excerpt = document.createElement("p");
     excerpt.className = "lead-excerpt";
-    excerpt.textContent = conciseExcerpt(post.text, post.author);
+    excerpt.textContent = conciseExcerpt(displayText(post), post.author);
     const meta = document.createElement("div");
     meta.className = "lead-meta";
     for (const label of [
@@ -453,7 +481,14 @@ if (typeof document !== "undefined") {
       item.textContent = label;
       meta.append(item);
     }
-    content.append(kicker, title, excerpt, meta, externalLink("查看 X 原帖 ↗", post.url));
+    content.append(
+      kicker,
+      translationBadge,
+      title,
+      excerpt,
+      meta,
+      externalLink("查看 X 原帖 ↗", post.url),
+    );
     elements.lead.replaceChildren(media, content);
   }
 
@@ -521,7 +556,9 @@ if (typeof document !== "undefined") {
     card.querySelector(".topic-pill").textContent = topicLabel(post);
     const fallback = card.querySelector(".fallback-badge");
     fallback.hidden = !post.fallback;
-    card.querySelector(".post-excerpt").textContent = post.text || "该动态没有文字摘要。";
+    const translationBadge = card.querySelector(".translation-badge");
+    applyTranslationBadge(translationBadge, post);
+    card.querySelector(".post-excerpt").textContent = displayText(post) || "该动态没有文字摘要。";
     card.querySelector(".post-author").textContent = `@${post.author || "未知作者"}`;
     const date = card.querySelector(".post-date");
     date.dateTime = post.created_at;
@@ -566,8 +603,22 @@ if (typeof document !== "undefined") {
     heading.className = "dialog-title";
     heading.textContent = `@${post.author || "未知作者"} · 热点详情`;
     const copy = document.createElement("p");
-    copy.className = "dialog-copy";
+    copy.className = "dialog-copy dialog-original";
     copy.textContent = post.text || "该动态没有文字内容。";
+    const languageContent = [];
+    if (post.text_zh) {
+      const translatedHeading = document.createElement("h3");
+      translatedHeading.className = "dialog-language-heading";
+      translatedHeading.textContent = "中文译文（机器翻译）";
+      const translatedCopy = document.createElement("p");
+      translatedCopy.className = "dialog-copy";
+      translatedCopy.textContent = post.text_zh;
+      const originalHeading = document.createElement("h3");
+      originalHeading.className = "dialog-language-heading";
+      originalHeading.textContent = "英文原文";
+      languageContent.push(translatedHeading, translatedCopy, originalHeading);
+    }
+    languageContent.push(copy);
     const meta = document.createElement("div");
     meta.className = "dialog-meta";
     const labels = [
@@ -618,7 +669,7 @@ if (typeof document !== "undefined") {
     elements.dialogContent.replaceChildren(
       heading,
       meta,
-      copy,
+      ...languageContent,
       gallery,
       keywords,
       externalLink("在 X 查看原帖 ↗", post.url),
