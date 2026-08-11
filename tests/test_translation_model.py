@@ -1135,11 +1135,22 @@ def test_engine_loads_verified_snapshot_offline_on_cpu_and_translates_determinis
             "attention_mask": "mask",
             "do_sample": False,
             "num_beams": 4,
-            "max_new_tokens": 512,
+            "max_new_tokens": 64,
         }
     ]
     assert state.decode_kwargs == {"skip_special_tokens": True}
     assert result == ["翻译一", "翻译二"]
+
+
+def test_engine_caps_generation_for_long_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_snapshot(tmp_path)
+    state = _install_fake_runtime(monkeypatch, decoded=["translation"])
+
+    TransformersTranslationEngine(tmp_path).translate_many(["word " * 200])
+
+    assert state.generate_calls[0]["max_new_tokens"] == 256
 
 
 def test_engine_empty_batch_does_not_preflight_or_import_runtime(

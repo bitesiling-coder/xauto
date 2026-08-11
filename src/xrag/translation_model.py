@@ -14,6 +14,9 @@ import uuid
 
 MODEL_ID = "Helsinki-NLP/opus-mt-en-zh"
 MANIFEST_VERSION = 1
+_MAX_INPUT_TOKENS = 512
+_MIN_OUTPUT_TOKENS = 64
+_MAX_OUTPUT_TOKENS = 256
 
 _MODEL_ERROR = "local translation model unavailable"
 _TRANSLATION_ERROR = "local translation failed"
@@ -761,14 +764,18 @@ class TransformersTranslationEngine:
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=512,
+                max_length=_MAX_INPUT_TOKENS,
+            )
+            max_new_tokens = min(
+                _MAX_OUTPUT_TOKENS,
+                max(_MIN_OUTPUT_TOKENS, (max(map(len, values)) + 1) // 2),
             )
             with torch.inference_mode():
                 generated = self._model.generate(
                     **encoded,
                     do_sample=False,
                     num_beams=4,
-                    max_new_tokens=512,
+                    max_new_tokens=max_new_tokens,
                 )
             decoded = self._tokenizer.batch_decode(
                 generated, skip_special_tokens=True
