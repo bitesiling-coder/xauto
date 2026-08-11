@@ -225,6 +225,8 @@ class TranslationEnricher:
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         batch_size: int = _DEFAULT_BATCH_SIZE,
     ) -> None:
+        if type(batch_size) is not int or batch_size < 1:
+            raise ValueError("batch size must be a positive integer")
         self._engine = engine
         self._clock = clock
         self._batch_size = batch_size

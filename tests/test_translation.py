@@ -44,6 +44,12 @@ class FakeEngine:
         return result  # type: ignore[return-value]
 
 
+@pytest.mark.parametrize("batch_size", [0, -1, 1.5, True])
+def test_enricher_rejects_invalid_batch_size(batch_size: object) -> None:
+    with pytest.raises(ValueError, match="^batch size must be a positive integer$"):
+        TranslationEnricher(FakeEngine(), batch_size=batch_size)  # type: ignore[arg-type]
+
+
 def make_post(
     text: str = "Fifteen letters plus enough useful English words",
     quoted_text: str | None = None,
