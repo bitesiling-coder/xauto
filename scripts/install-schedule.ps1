@@ -474,6 +474,10 @@ if (-not (Test-Path -LiteralPath $WindowsRunnerPath -PathType Leaf)) {
 if ($WindowsRunnerPath -match '[\x00-\x1F\x7F"]') {
     throw "The Windows daily launcher path contains an unsupported quote or control character."
 }
+$PowerShellExecutable = Join-Path $PSHOME "powershell.exe"
+if (-not (Test-Path -LiteralPath $PowerShellExecutable -PathType Leaf)) {
+    throw "Windows PowerShell is unavailable."
+}
 
 $PointerPlan = @(Get-LinkedWorktreePointerPlan -ProjectRoot $ProjectRoot)
 $PendingPointerCount = @($PointerPlan | Where-Object { $_.NeedsUpdate }).Count
@@ -519,7 +523,7 @@ $ActionArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Distribution
 
 if ($DryRun) {
     Write-Output "Dry run: would normalize $PendingPointerCount linked-worktree Git pointer file(s); no Git metadata was changed."
-    Write-Output "Dry run: task='$TaskName' time='$ScheduleTime' action=powershell.exe $ActionArguments"
+    Write-Output "Dry run: task='$TaskName' time='$ScheduleTime' action=$PowerShellExecutable $ActionArguments"
     return
 }
 
@@ -535,7 +539,7 @@ try {
         throw "Git pointer preparation did not produce stable portable metadata."
     }
 
-    $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $ActionArguments
+    $Action = New-ScheduledTaskAction -Execute $PowerShellExecutable -Argument $ActionArguments
     $Trigger = New-ScheduledTaskTrigger -Daily -At $ScheduleTime
     $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
     $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name

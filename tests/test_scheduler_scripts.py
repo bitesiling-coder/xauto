@@ -458,6 +458,13 @@ def test_installer_has_idempotent_daily_current_user_defaults() -> None:
     assert "-RunLevel Limited" in script
 
 
+def test_installer_uses_an_absolute_powershell_executable_for_the_task() -> None:
+    script = INSTALLER.read_text(encoding="utf-8")
+
+    assert '$PowerShellExecutable = Join-Path $PSHOME "powershell.exe"' in script
+    assert "New-ScheduledTaskAction -Execute $PowerShellExecutable" in script
+
+
 def test_installer_decodes_direct_wsl_output_as_utf8_and_keeps_stderr_separate() -> None:
     script = INSTALLER.read_text(encoding="utf-8")
 
@@ -551,7 +558,8 @@ def test_scheduled_action_uses_native_launcher_and_preserves_literal_path(tmp_pa
         "function global:wsl.exe { $global:LASTEXITCODE = 0; $global:FakeWslRunner }; "
         "function global:New-ScheduledTaskAction { param($Execute, $Argument); "
         "$expectedLauncher = (Resolve-Path -LiteralPath '.\\scripts\\run-daily.ps1').Path; "
-        "if ($Execute -cne 'powershell.exe') { throw 'wrong executable' }; "
+        "$expectedPowerShell = Join-Path $PSHOME 'powershell.exe'; "
+        "if ($Execute -cne $expectedPowerShell) { throw 'wrong executable' }; "
         "if ($Argument -cne ('-NoProfile -ExecutionPolicy Bypass -File \"' + $expectedLauncher + '\" -Distribution \"Ubuntu\"')) "
         "{ throw ('wrong action: ' + $Argument) }; "
         "$global:ActionOk = $true; [pscustomobject]@{} }; "
