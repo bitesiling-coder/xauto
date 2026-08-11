@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import re
-from typing import Callable, Literal, Mapping, Protocol, Sequence
+from typing import Callable, Literal, Protocol, Sequence
 
 from xrag.models import Post, QuotedPost, TranslationMetadata
 
@@ -69,42 +68,27 @@ class TranslationEngine(Protocol):
 @dataclass(frozen=True)
 class ProtectedText:
     text: str
-    replacements: Mapping[str, str]
+    replacements: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        immutable = tuple(
+            (marker, original) for marker, original in self.replacements
+        )
+        object.__setattr__(self, "replacements", immutable)
 
     def restore(self, translated: str) -> str:
         if not isinstance(translated, str):
             raise ValueError(_RESTORE_ERROR)
 
-        expected = list(self.replacements)
-        found = _MARKER_PATTERN.findall(translated)
-        baseline_literals = [
-            marker
-            for marker in _MARKER_PATTERN.findall(self.text)
-            if marker not in self.replacements
-        ]
-        unknown = [
-            marker
-            for marker in found
-            if marker not in self.replacements and marker not in baseline_literals
-        ]
-
-        if unknown:
-            raise ValueError(_RESTORE_ERROR)
-        if any(translated.count(marker) != 1 for marker in expected):
-            raise ValueError(_RESTORE_ERROR)
-        if Counter(
-            marker for marker in found if marker not in self.replacements
-        ) != Counter(baseline_literals):
+        expected = tuple(marker for marker, _original in self.replacements)
+        actual = tuple(_MARKER_PATTERN.findall(translated))
+        if actual != expected:
             raise ValueError(_RESTORE_ERROR)
 
-        positions = [translated.index(marker) for marker in expected]
-        if positions != sorted(positions):
-            raise ValueError(_RESTORE_ERROR)
-
-        restored = translated
-        for marker, original in self.replacements.items():
-            restored = restored.replace(marker, original)
-        return restored.strip()
+        replacement_map = dict(self.replacements)
+        return _MARKER_PATTERN.sub(
+            lambda match: replacement_map[match.group(0)], translated
+        ).strip()
 
 
 @dataclass(frozen=True)
@@ -132,44 +116,49 @@ def needs_english_translation(text: str) -> bool:
 
 
 def protect_text(text: str) -> ProtectedText:
-    structural = [
+    original_marker_matches = tuple(_MARKER_PATTERN.finditer(text))
+    original_markers = {match.group(0) for match in original_marker_matches}
+    candidates = [
         (match.start(), match.end()) for match in _EXCLUDED_PATTERN.finditer(text)
     ]
-    structural.sort(key=lambda span: (span[0], -(span[1] - span[0])))
-    selected: list[tuple[int, int]] = []
-    for span in structural:
-        if not any(_spans_overlap(span, chosen) for chosen in selected):
-            selected.append(span)
-
-    glossary: list[tuple[int, int, int]] = []
-    for term_index, pattern in enumerate(_GLOSSARY_PATTERNS):
-        glossary.extend(
-            (match.start(), match.end(), term_index)
+    for pattern in _GLOSSARY_PATTERNS:
+        candidates.extend(
+            (match.start(), match.end())
             for match in pattern.finditer(text)
         )
-    glossary.sort(key=lambda span: (-(span[1] - span[0]), span[0], span[2]))
-    for start, end, _term_index in glossary:
-        span = (start, end)
-        if not any(_spans_overlap(span, chosen) for chosen in selected):
-            selected.append(span)
-    selected.sort()
+    candidates.extend(
+        (match.start(), match.end()) for match in original_marker_matches
+    )
+    candidates.sort()
 
-    replacements: dict[str, str] = {}
+    selected: list[tuple[int, int]] = []
+    for start, end in candidates:
+        if not selected or start >= selected[-1][1]:
+            selected.append((start, end))
+            continue
+        previous_start, previous_end = selected[-1]
+        selected[-1] = (previous_start, max(previous_end, end))
+
+    replacements: list[tuple[str, str]] = []
+    used_markers: set[str] = set()
     chunks: list[str] = []
     cursor = 0
     marker_number = 0
     for start, end in selected:
         chunks.append(text[cursor:start])
         while True:
+            if marker_number > 9_999:
+                raise ValueError("too many protected translation spans")
             marker = f"XRAG{marker_number:04d}TOKEN"
             marker_number += 1
-            if marker not in text and marker not in replacements:
+            if marker not in original_markers and marker not in used_markers:
                 break
         chunks.append(marker)
-        replacements[marker] = text[start:end]
+        replacements.append((marker, text[start:end]))
+        used_markers.add(marker)
         cursor = end
     chunks.append(text[cursor:])
-    return ProtectedText("".join(chunks), replacements)
+    return ProtectedText("".join(chunks), tuple(replacements))
 
 
 @dataclass(frozen=True)
@@ -320,44 +309,43 @@ class TranslationEnricher:
         if not candidates:
             return {}
 
+        successes: dict[Literal["post", "quoted"], str] = {}
+        retry_candidates = candidates
         try:
             batch = self._engine.translate_many(
                 [candidate.protected.text for candidate in candidates]
             )
-            restored = self._validate_batch(batch, candidates)
         except Exception:
-            restored = None
-        if restored is not None:
-            return {
-                candidate.owner: value
-                for candidate, value in zip(candidates, restored, strict=True)
-            }
+            pass
+        else:
+            if isinstance(batch, list) and len(batch) == len(candidates):
+                retry_candidates = []
+                for value, candidate in zip(batch, candidates, strict=True):
+                    try:
+                        successes[candidate.owner] = self._validate_item(
+                            value, candidate
+                        )
+                    except Exception:
+                        retry_candidates.append(candidate)
 
-        successes: dict[Literal["post", "quoted"], str] = {}
-        for candidate in candidates:
+        for candidate in retry_candidates:
             try:
                 result = self._engine.translate_many([candidate.protected.text])
-                value = self._validate_batch(result, [candidate])[0]
+                if not isinstance(result, list) or len(result) != 1:
+                    raise ValueError("invalid translation result")
+                value = self._validate_item(result[0], candidate)
             except Exception:
                 continue
             successes[candidate.owner] = value
         return successes
 
     @staticmethod
-    def _validate_batch(
-        result: object,
-        candidates: list[_Candidate],
-    ) -> list[str]:
-        if not isinstance(result, list) or len(result) != len(candidates):
+    def _validate_item(value: object, candidate: _Candidate) -> str:
+        if not isinstance(value, str) or not value.strip():
             raise ValueError("invalid translation result")
-        restored: list[str] = []
-        for value, candidate in zip(result, candidates, strict=True):
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError("invalid translation result")
-            restored_value = candidate.protected.restore(value)
-            if not restored_value:
-                raise ValueError("invalid translation result")
-            restored.append(restored_value)
+        restored = candidate.protected.restore(value)
+        if not restored:
+            raise ValueError("invalid translation result")
         return restored
 
     def _new_metadata(self, text: str) -> TranslationMetadata:
@@ -377,7 +365,3 @@ class TranslationEnricher:
 
 def _source_sha256(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
-
-
-def _spans_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
-    return left[0] < right[1] and right[0] < left[1]

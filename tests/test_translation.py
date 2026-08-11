@@ -166,28 +166,29 @@ def test_protect_text_preserves_every_glossary_term(term: str) -> None:
 def test_protect_text_uses_longest_overlapping_term_and_original_casing() -> None:
     original = "Autonomous AI Agents meet ai agent and AI Agent"
     protected = protect_text(original)
+    replacement_values = [original for _marker, original in protected.replacements]
 
     assert protected.restore(protected.text) == original
-    assert "Autonomous AI Agents" in protected.replacements.values()
-    assert "ai agent" in protected.replacements.values()
-    assert "AI Agent" in protected.replacements.values()
+    assert "Autonomous AI Agents" in replacement_values
+    assert "ai agent" in replacement_values
+    assert "AI Agent" in replacement_values
 
 
-def test_protect_text_prefers_longer_term_when_different_starts_overlap() -> None:
+def test_protect_text_merges_overlapping_terms_into_one_protected_span() -> None:
     original = "AI Agent Security"
 
     protected = protect_text(original)
 
-    assert list(protected.replacements.values()) == ["Agent Security"]
+    assert protected.replacements == (("XRAG0000TOKEN", original),)
     assert protected.restore(protected.text) == original
 
 
-def test_protect_text_keeps_structural_token_priority_over_overlapping_term() -> None:
+def test_protect_text_merges_structural_token_with_overlapping_term() -> None:
     original = "@Autonomous AI Agents"
 
     protected = protect_text(original)
 
-    assert "@Autonomous" in protected.replacements.values()
+    assert protected.replacements == (("XRAG0000TOKEN", original),)
     assert protected.restore(protected.text) == original
 
 
@@ -195,8 +196,9 @@ def test_protect_text_avoids_marker_collision_in_original() -> None:
     original = "XRAG0000TOKEN then AI Agent"
     protected = protect_text(original)
 
-    assert "XRAG0000TOKEN" in protected.text
     assert "XRAG0001TOKEN" in protected.text
+    assert "XRAG0002TOKEN" in protected.text
+    assert "XRAG0000TOKEN" not in protected.text
     assert protected.restore(protected.text) == original
 
 
@@ -217,7 +219,7 @@ def test_restore_rejects_lost_repeated_unknown_or_reordered_markers(
     mutate: Callable[[str, list[str]], str],
 ) -> None:
     protected = protect_text("AI Agent and RWA")
-    markers = list(protected.replacements)
+    markers = [marker for marker, _original in protected.replacements]
 
     with pytest.raises(
         ValueError, match="^protected translation spans were not preserved$"
@@ -235,13 +237,38 @@ def test_restore_rejects_unknown_marker_with_more_than_four_digits() -> None:
 
 
 def test_protected_text_and_failure_are_frozen() -> None:
-    protected = ProtectedText("plain", {})
+    protected = ProtectedText("plain", ())
     failure = TranslationFailure("post", "translation failed")
 
     with pytest.raises(FrozenInstanceError):
         protected.text = "changed"
     with pytest.raises(FrozenInstanceError):
         failure.reason = "changed"
+
+
+def test_protected_text_copies_replacements_to_an_immutable_tuple() -> None:
+    external = [["XRAG0000TOKEN", "AI Agent"]]
+
+    protected = ProtectedText(
+        "XRAG0000TOKEN",
+        external,  # type: ignore[arg-type]
+    )
+    external[0][1] = "changed outside"
+
+    assert protected.replacements == (("XRAG0000TOKEN", "AI Agent"),)
+    assert not hasattr(protected.replacements, "clear")
+    with pytest.raises(TypeError):
+        protected.replacements[0] = ("XRAG0000TOKEN", "changed")
+
+
+def test_protect_and_restore_large_number_of_tokens() -> None:
+    original = " ".join(f"@user{index}" for index in range(8_000))
+
+    protected = protect_text(original)
+
+    assert isinstance(protected.replacements, tuple)
+    assert len(protected.replacements) == 8_000
+    assert protected.restore(protected.text) == original
 
 
 def test_enrich_batches_main_and_quoted_and_attaches_metadata() -> None:
@@ -421,13 +448,11 @@ def test_batch_exception_retries_each_item_so_quote_can_succeed() -> None:
     assert "private" not in repr(outcome.errors)
 
 
-def test_one_blank_batch_result_retries_items_and_preserves_other_success() -> None:
+def test_one_blank_batch_result_retries_only_invalid_item() -> None:
     def respond(texts: list[str], call: int) -> object:
         if call == 1:
             return ["   ", "batch quote"]
-        if "Main" in texts[0]:
-            return ["still blank" if False else "   "]
-        return ["引用单项成功"]
+        return ["   "]
 
     engine = FakeEngine(respond)
     outcome = TranslationEnricher(engine).enrich(
@@ -438,11 +463,57 @@ def test_one_blank_batch_result_retries_items_and_preserves_other_success() -> N
         existing=None,
     )
 
-    assert [len(call) for call in engine.calls] == [2, 1, 1]
+    assert [len(call) for call in engine.calls] == [2, 1]
     assert outcome.translated == 1
     assert outcome.errors == (TranslationFailure("post", "translation failed"),)
     assert outcome.post.quoted_post is not None
-    assert outcome.post.quoted_post.text_zh == "引用单项成功"
+    assert outcome.post.quoted_post.text_zh == "batch quote"
+
+
+def test_valid_main_batch_result_survives_failed_retry_for_blank_quote() -> None:
+    def respond(_texts: list[str], call: int) -> object:
+        if call == 1:
+            return ["主帖 batch 成功", "   "]
+        return RuntimeError("single retry unavailable")
+
+    engine = FakeEngine(respond)
+    outcome = TranslationEnricher(engine).enrich(
+        make_post(
+            "Main English content has enough useful letters",
+            "Quoted English content has enough useful letters",
+        ),
+        existing=None,
+    )
+
+    assert [len(call) for call in engine.calls] == [2, 1]
+    assert outcome.translated == 1
+    assert outcome.post.text_zh == "主帖 batch 成功"
+    assert outcome.post.quoted_post is not None
+    assert outcome.post.quoted_post.text_zh == ""
+    assert outcome.errors == (TranslationFailure("quoted", "translation failed"),)
+
+
+def test_valid_quote_batch_result_survives_failed_retry_for_bad_main_marker() -> None:
+    def respond(_texts: list[str], call: int) -> object:
+        if call == 1:
+            return ["XRAG9999TOKEN", "引用 batch 成功"]
+        return RuntimeError("single retry unavailable")
+
+    engine = FakeEngine(respond)
+    outcome = TranslationEnricher(engine).enrich(
+        make_post(
+            "Main English content has enough useful letters",
+            "Quoted English content has enough useful letters",
+        ),
+        existing=None,
+    )
+
+    assert [len(call) for call in engine.calls] == [2, 1]
+    assert outcome.translated == 1
+    assert outcome.post.text_zh == ""
+    assert outcome.post.quoted_post is not None
+    assert outcome.post.quoted_post.text_zh == "引用 batch 成功"
+    assert outcome.errors == (TranslationFailure("post", "translation failed"),)
 
 
 @pytest.mark.parametrize("invalid", [None, "not-a-list", [123], []])
