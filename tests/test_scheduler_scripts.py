@@ -650,6 +650,40 @@ def translate_with_wsl(path: Path) -> str:
     return translated.stdout.decode("utf-8").strip()
 
 
+def run_wsl_with_minimal_environment(
+    *arguments: str,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a clean-environment WSL command without disabling WSL interop."""
+    return subprocess.run(
+        [
+            "wsl.exe",
+            "-d",
+            "Ubuntu",
+            "-e",
+            "bash",
+            "-c",
+            'if [[ -z "${WSL_INTEROP-}" ]]; then exit 125; fi; '
+            'exec env -i "WSL_INTEROP=$WSL_INTEROP" "$@"',
+            "--",
+            *arguments,
+        ],
+        capture_output=True,
+        check=False,
+    )
+
+
+def require_windows_python_wsl_interop(windows_python_dir: str) -> None:
+    probe = run_wsl_with_minimal_environment(
+        f"PATH={windows_python_dir}:/usr/bin:/bin",
+        "python.exe",
+        "-S",
+        "-c",
+        "import sys; raise SystemExit(sys.platform != 'win32')",
+    )
+    if probe.returncode != 0:
+        pytest.skip("Windows Python is unavailable through WSL interop")
+
+
 def prepare_wsl_runner(
     tmp_path: Path,
     *,
@@ -718,6 +752,9 @@ def prepare_wsl_runner(
             if discovered is None:
                 pytest.skip("Windows Python is unavailable through WSL interop")
             windows_python = str(Path(discovered).resolve())
+        require_windows_python_wsl_interop(
+            str(PurePosixPath(windows_python).parent)
+        )
 
     return (
         project,
@@ -745,24 +782,14 @@ def run_daily_in_minimal_environment(
             check=False,
         )
 
-    return subprocess.run(
-        [
-            "wsl.exe",
-            "-d",
-            "Ubuntu",
-            "-e",
-            "env",
-            "-i",
-            f"HOME={wsl_home}",
-            f"PATH={search_path}",
-            f"FAKE_STATUS={status}",
-            f"FAKE_PYTHON_STATUS={python_status}",
-            "WSLENV=FAKE_PYTHON_STATUS",
-            "bash",
-            wsl_runner,
-        ],
-        capture_output=True,
-        check=False,
+    return run_wsl_with_minimal_environment(
+        f"HOME={wsl_home}",
+        f"PATH={search_path}",
+        f"FAKE_STATUS={status}",
+        f"FAKE_PYTHON_STATUS={python_status}",
+        "WSLENV=FAKE_PYTHON_STATUS",
+        "bash",
+        wsl_runner,
     )
 
 
