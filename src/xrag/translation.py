@@ -102,6 +102,38 @@ class ProtectedText:
             lambda match: replacement_map[match.group(0)], translated
         ).strip()
 
+    def translatable_segments(self) -> tuple[str, ...]:
+        expected = tuple(marker for marker, _original in self.replacements)
+        if tuple(_MARKER_PATTERN.findall(self.text)) != expected:
+            raise ValueError(_RESTORE_ERROR)
+        return tuple(_MARKER_PATTERN.split(self.text))
+
+    def restore_segments(self, translated_segments: Sequence[str]) -> str:
+        if isinstance(translated_segments, (str, bytes)) or not isinstance(
+            translated_segments, Sequence
+        ):
+            raise ValueError(_RESTORE_ERROR)
+
+        source_segments = self.translatable_segments()
+        values = list(translated_segments)
+        if len(values) != len(source_segments):
+            raise ValueError(_RESTORE_ERROR)
+        for source, translated in zip(source_segments, values, strict=True):
+            if not isinstance(translated, str):
+                raise ValueError(_RESTORE_ERROR)
+            if source.strip():
+                if not translated.strip() or _MARKER_PATTERN.search(translated):
+                    raise ValueError(_RESTORE_ERROR)
+            elif translated != source:
+                raise ValueError(_RESTORE_ERROR)
+
+        chunks = [values[0]]
+        for (_marker, original), translated in zip(
+            self.replacements, values[1:], strict=True
+        ):
+            chunks.extend((original, translated))
+        return "".join(chunks).strip()
+
 
 @dataclass(frozen=True)
 class TranslationFailure:
@@ -176,6 +208,13 @@ class _Candidate:
     owner: Literal["post", "quoted"]
     text: str
     protected: ProtectedText
+
+
+@dataclass(frozen=True)
+class _Segment:
+    owner: Literal["post", "quoted"]
+    index: int
+    text: str
 
 
 class TranslationEnricher:
@@ -320,43 +359,70 @@ class TranslationEnricher:
             return {}
 
         successes: dict[Literal["post", "quoted"], str] = {}
-        retry_candidates = candidates
+        outputs: dict[Literal["post", "quoted"], list[str]] = {}
+        pending: list[_Segment] = []
+        completed: set[tuple[Literal["post", "quoted"], int]] = set()
+        for candidate in candidates:
+            segments = candidate.protected.translatable_segments()
+            outputs[candidate.owner] = list(segments)
+            for index, segment in enumerate(segments):
+                if segment.strip():
+                    pending.append(_Segment(candidate.owner, index, segment))
+
+        retry_segments = pending
         try:
             batch = self._engine.translate_many(
-                [candidate.protected.text for candidate in candidates]
+                [segment.text for segment in pending]
             )
         except Exception:
             pass
         else:
-            if isinstance(batch, list) and len(batch) == len(candidates):
-                retry_candidates = []
-                for value, candidate in zip(batch, candidates, strict=True):
+            if isinstance(batch, list) and len(batch) == len(pending):
+                retry_segments = []
+                for value, segment in zip(batch, pending, strict=True):
                     try:
-                        successes[candidate.owner] = self._validate_item(
-                            value, candidate
+                        outputs[segment.owner][segment.index] = (
+                            self._validate_segment(value)
                         )
+                        completed.add((segment.owner, segment.index))
                     except Exception:
-                        retry_candidates.append(candidate)
+                        retry_segments.append(segment)
 
-        for candidate in retry_candidates:
+        for segment in retry_segments:
             try:
-                result = self._engine.translate_many([candidate.protected.text])
+                result = self._engine.translate_many([segment.text])
                 if not isinstance(result, list) or len(result) != 1:
                     raise ValueError("invalid translation result")
-                value = self._validate_item(result[0], candidate)
+                outputs[segment.owner][segment.index] = self._validate_segment(
+                    result[0]
+                )
             except Exception:
                 continue
-            successes[candidate.owner] = value
+            completed.add((segment.owner, segment.index))
+
+        for candidate in candidates:
+            required = {
+                (candidate.owner, index)
+                for index, segment in enumerate(candidate.protected.translatable_segments())
+                if segment.strip()
+            }
+            if not required.issubset(completed):
+                continue
+            try:
+                successes[candidate.owner] = candidate.protected.restore_segments(
+                    outputs[candidate.owner]
+                )
+            except Exception:
+                continue
         return successes
 
     @staticmethod
-    def _validate_item(value: object, candidate: _Candidate) -> str:
+    def _validate_segment(value: object) -> str:
         if not isinstance(value, str) or not value.strip():
             raise ValueError("invalid translation result")
-        restored = candidate.protected.restore(value)
-        if not restored:
-            raise ValueError("invalid translation result")
-        return restored
+        if _MARKER_PATTERN.search(value):
+            raise ValueError(_RESTORE_ERROR)
+        return value.strip()
 
     def _new_metadata(self, text: str) -> TranslationMetadata:
         now = self._clock()

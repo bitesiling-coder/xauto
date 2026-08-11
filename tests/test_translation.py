@@ -328,9 +328,49 @@ def test_protect_and_restore_large_number_of_tokens() -> None:
     assert protected.restore(protected.text) == original
 
 
+def test_enrich_reassembles_protected_spans_after_translating_only_plain_segments() -> None:
+    text = (
+        "AI Agent uses x402 with @alice and $SOL at https://example.com/path "
+        "while preserving every protected span exactly."
+    )
+    translations = {
+        " uses ": "使用",
+        " with ": "与",
+        " and ": "和",
+        " at ": "在",
+        " while preserving every protected span exactly.": "，并精确保留每个受保护片段。",
+    }
+
+    engine = FakeEngine(
+        lambda texts, _call: [
+            translations[text] if "XRAG" not in text else "XRAG0000TOKEN"
+            for text in texts
+        ]
+    )
+
+    outcome = TranslationEnricher(engine).enrich(make_post(text), existing=None)
+
+    assert engine.calls == [list(translations)]
+    assert outcome.errors == ()
+    assert outcome.post.text_zh == (
+        "AI Agent使用x402与@alice和$SOL在https://example.com/path，"
+        "并精确保留每个受保护片段。"
+    )
+
+
+def test_enrich_rejects_unknown_marker_hallucinated_in_plain_segment() -> None:
+    text = "AI Agent has enough ordinary English words for this translation."
+    engine = FakeEngine(lambda texts, _call: ["XRAG9999TOKEN" for _ in texts])
+
+    outcome = TranslationEnricher(engine).enrich(make_post(text), existing=None)
+
+    assert outcome.post.text_zh == ""
+    assert outcome.errors == (TranslationFailure("post", "translation failed"),)
+
+
 def test_more_than_ten_thousand_spans_protect_restore_and_enrich() -> None:
     text = "``" * 10_001 + " abcdefghijklmno"
-    engine = FakeEngine(lambda texts, _call: [f"中文 {item}" for item in texts])
+    engine = FakeEngine(lambda texts, _call: [f"translated {item}" for item in texts])
 
     assert needs_english_translation(text) is True
     protected = protect_text(text)
@@ -341,7 +381,7 @@ def test_more_than_ten_thousand_spans_protect_restore_and_enrich() -> None:
 
     assert outcome.translated == 1
     assert outcome.errors == ()
-    assert outcome.post.text_zh == f"中文 {text}"
+    assert outcome.post.text_zh == chr(96) * 20_002 + "translated  abcdefghijklmno"
 
 
 def test_enrich_batches_main_and_quoted_and_attaches_metadata() -> None:
