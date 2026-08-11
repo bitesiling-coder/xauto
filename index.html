@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="X-RAG 今日热点：聚合 AI 与 Web3 公开动态的白色数据驾驶舱。"
+    >
+    <title>X-RAG 今日热点｜公开数据驾驶舱</title>
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">XR</span>
+          <div>
+            <p class="eyebrow">PUBLIC SIGNAL DESK</p>
+            <h1>X-RAG 今日热点</h1>
+          </div>
+        </div>
+        <div class="header-actions">
+          <p class="updated-copy">数据生成于 <time id="updated-at">正在读取…</time></p>
+          <button
+            class="refresh-button"
+            id="refresh-button"
+            type="button"
+            aria-label="立即刷新热点数据"
+          >
+            <span aria-hidden="true">↻</span>
+            立即刷新
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell" id="main-content">
+      <div class="status-banner" id="status-banner" role="status" aria-live="polite">
+        正在加载最新热点数据…
+      </div>
+
+      <section class="lead-section" aria-labelledby="lead-heading">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">TOP SIGNAL</p>
+            <h2 id="lead-heading">今日领衔</h2>
+          </div>
+          <span class="section-note">综合热度最高</span>
+        </div>
+        <article class="lead-story" id="lead-story" aria-busy="true"></article>
+      </section>
+
+      <section aria-labelledby="summary-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">DAILY PULSE</p>
+            <h2 id="summary-heading">今日概览</h2>
+          </div>
+          <p>快速了解样本规模与公开互动</p>
+        </div>
+        <div class="summary-grid" id="summary-grid" aria-busy="true"></div>
+      </section>
+
+      <section aria-labelledby="topics-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TOPIC MAP</p>
+            <h2 id="topics-heading">主题雷达</h2>
+          </div>
+          <p>四条主线的相对热度</p>
+        </div>
+        <div class="topic-grid" id="topic-grid" aria-busy="true"></div>
+      </section>
+
+      <section aria-labelledby="feed-heading">
+        <div class="section-heading feed-heading">
+          <div>
+            <p class="eyebrow">LIVE BRIEFING</p>
+            <h2 id="feed-heading">热点速递</h2>
+          </div>
+          <div class="feed-controls" aria-label="热点筛选和排序">
+            <div class="filter-group" role="group" aria-label="按主题系列筛选">
+              <button class="filter-button is-active" type="button" data-filter="all" aria-pressed="true">全部</button>
+              <button class="filter-button" type="button" data-filter="AI" aria-pressed="false">AI</button>
+              <button class="filter-button" type="button" data-filter="Web3" aria-pressed="false">Web3</button>
+            </div>
+            <label class="sort-control" for="sort-select">
+              <span>排序</span>
+              <select id="sort-select" aria-label="热点排序方式">
+                <option value="score">综合热度</option>
+                <option value="newest">最新发布</option>
+                <option value="engagement">互动最高</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="hotspot-feed" id="hotspot-feed" aria-live="polite" aria-busy="true"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <p>X-RAG · 公开信号观察台</p>
+        <p>内容来自公开快照，仅作信息索引。</p>
+      </div>
+    </footer>
+
+    <dialog id="post-dialog" aria-labelledby="dialog-heading">
+      <div class="dialog-shell">
+        <div class="dialog-toolbar">
+          <p class="eyebrow">SIGNAL DETAIL</p>
+          <button id="dialog-close" class="dialog-close" type="button" aria-label="关闭详情对话框">×</button>
+        </div>
+        <div id="dialog-content"></div>
+      </div>
+    </dialog>
+
+    <template id="post-template">
+      <article class="post-card">
+        <div class="post-media media-placeholder" role="img" aria-label="热点卡片媒体占位图"></div>
+        <div class="post-body">
+          <div class="post-topline">
+            <span class="topic-pill"></span>
+            <span class="fallback-badge" hidden>回溯样本</span>
+          </div>
+          <p class="post-excerpt"></p>
+          <div class="post-byline">
+            <span class="post-author"></span>
+            <time class="post-date"></time>
+          </div>
+          <div class="post-metrics" aria-label="公开互动数据">
+            <span class="post-views"></span>
+            <span class="post-likes"></span>
+          </div>
+          <div class="post-actions">
+            <button class="detail-button" type="button" aria-label="查看完整热点详情">查看详情</button>
+            <a
+              class="source-link"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="在新窗口查看 X 原帖"
+            >查看原帖 ↗</a>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="assets/app.js"></script>
+  </body>
+</html>

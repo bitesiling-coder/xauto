@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "generated_at": "2026-08-11T02:07:55.155779+08:00",
+  "timezone": "Asia/Singapore",
+  "fallback_used": true,
+  "summary": {
+    "posts": 12,
+    "authors": 12,
+    "media": 12,
+    "engagement": 397838
+  },
+  "topics": [
+    {
+      "id": "ai-agents-security",
+      "label": "AI Agents 与 Agent Security",
+      "family": "AI",
+      "posts": 3,
+      "score": 0.567586,
+      "top_keyword": "Autonomous AI Agents"
+    },
+    {
+      "id": "world-models-embodied-ai",
+      "label": "World Models 与 Embodied AI",
+      "family": "AI",
+      "posts": 0,
+      "score": 0,
+      "top_keyword": ""
+    },
+    {
+      "id": "rwa-stablecoin-payments",
+      "label": "RWA 与 Stablecoin Payments",
+      "family": "Web3",
+      "posts": 4,
+      "score": 0.732767,
+      "top_keyword": "Tokenized Stocks"
+    },
+    {
+      "id": "prediction-markets-regulation",
+      "label": "Prediction Markets 与 Crypto Regulation",
+      "family": "Web3",
+      "posts": 5,
+      "score": 0.674625,
+      "top_keyword": "Prediction Markets"
+    }
+  ],
+  "posts": [
+    {
+      "id": "2086437339769774452",
+      "author": "solana",
+      "text": "A $15T asset manager. A 175-year-old payments giant. A billion transactions in seven days. Different sides of finance, all moving through one network. Solana.\n\nHere’s everything that happened this week:\n\n📰 Headline News\n\n- @BlackRock filed with the SEC to issue tokenized BRSRV fund shares on Solana\n\n- @WesternUnion launched its USDPT-powered Stablecard with @raincards across 37 markets\n\n- Solana processed a record 1.01B non-vote transactions in a single week\n\n📰 Launches\n\n- Take-Two Interactive’s $TTWO stock went live on Solana via @sunrise, issued by @Backpack Securities\n\n- @kamino launched Kamino Institutional Yield with an initial $25M Commodity Yield vault\n\n- @AllUnityStable brought CHFAU, the first fully MiCAR-compliant Swiss franc stablecoin, to Solana\n\n- @perena introduced Smart Borrow, powered by @hobba_io, to borrow without sacrificing yield\n\n- @upshift_fi launched @sharpbytexyz’s RWA Ecosystem Vault, allocating to RWA cash flows including @onrefinance’s ONyc\n\n- @solomon_labs deployed the USDv program on Solana mainnet\n\n- @phygitals debuted a Solana-native RWA mobile app\n\n- @rarible opened its Solana marketplace, with @Claynosaurz as its first featured collection\n\n- @metaplex added real-time quotes, Jito tipping, and MEV protection to its trading interface\n\n- @nuketrade rolled out its public beta, bringing institutional-grade market-neutral strategies onchain\n\n- @Alchemy shipped Solana Account Archive for querying account states at any historical slot\n\n- @Titan_Exchange opened Titan Pro early access for CEX-style onchain spot trading\n\n- @triton_one launched Riptide endpoints and Triton Shred Streaming with @DoubleZero\n\n- @0xProject made its Swap API available on Solana\n\n- @SaharaAI enabled Solana trading on @HeySorinAI via @OKX OnchainOS\n\n- @TradeNeutral shipped Neutral Autopilot for automated strategy and yield optimization\n\n- SIMD-0525 cut testnet target slot time from 400ms to 350ms, the first step toward 200ms target\n\n- @SatRushIO debuted SatRush, a gamified Bitcoin-mining reward protocol\n\n- @crittersquest launched Lucky Pick Mines on Solana\n\n- @magicblock and @SuperteamTH opened applications for the MagicBlock Founders Camp\n\n- Solana’s poker series returns at Breakpoint 2026 and WSOP Bahamas following the @WSOP Solana Showdown in Vegas\n\n- @SuperteamKorea set Solana Summit Korea for September 30 in Seoul\n\n- @solanaturbine opened Q3 applications for its revamped Builders Program\n\n- @spenders_club brings Solana Summer House back to LA on August 29 with @solanaspaces, @SolanaEvents, and @SolanaFndn\n\n📰 Milestones\n\n- Solana captured ~$1.45B in July tokenized-equities volume, representing ~82% global market share\n\n- Tokenized Micron ($MU) shares topped $530M in spot volume within six weeks of launch\n\n- @ArcherExchange_ surpassed 1M trades on Solana\n\n- WSOP Solana Showdown crowned its first bracelet champion, @rasmr_eth\n\n- Frontier Traders crossed $1B in combined tokenized-equity spot and perps volume\n\n- @Rosentica One Arena crossed $3.3M in volume across 7.5K matches\n\n- @ShiftRWA crossed 1K unique tokenized-equity holders\n\n- @CandyDigital recorded its 5,000th digital collectible sale\n\n- @SolanaMBS marked five years since the Solana Monkey Business mint\n\n- @xStocksFi crossed 190K holders on Solana\n\nIf you enjoyed this week’s newsletter, repost it!\n\nArtwork by @ket_on_solana",
+      "created_at": "2026-08-09T13:00:00+00:00",
+      "url": "https://x.com/i/status/2086437339769774452",
+      "likes": 1326,
+      "views": 180186,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.817925,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/24bcb4c34f71ad6966671510b673cdde75f0f48fbfbc88f85250f3675c4c00f6.jpg",
+          "type": "video_poster",
+          "alt": "A $15T asset manager. A 175-year-old payments giant. A billion transactions in seven days. Different sides of finance, all moving through one network. Solana.\n\n"
+        }
+      ]
+    },
+    {
+      "id": "2086578620315955414",
+      "author": "CryptoApprenti1",
+      "text": "币圈又“坠楼”一个，这次是我们中国人。\n\n华人加密大佬 Harry Yeh，Quantum Fintech Group 创始人，2013 年 BTC 才 $60 的时候就入场的老 OG，第一支基金 $250 万起家，做到管理资产超 $24 亿，Fantom、Tomb Finance、LIF3、L3USD 背后都有他的影子。\n\n8 月 7 日凌晨，巴拉圭亚松森 Jade Park 公寓，警方凌晨 4 点半接到报警：他从 30 楼摔了下来。\n\n细节一个比一个离谱：\n\n— 被发现时全身赤裸，身上盖着一个黑色塑料袋\n— 30 楼公寓大门敞开，屋内被翻得一片狼藉\n— 他在同一栋楼还有一套 27 楼的公寓，也被搜证\n— 29 岁的巴西女友对警方表示“什么都不知道”\n\n检方说正在排查三种可能：意外、自杀、他杀。\n\n我看完细节，觉得检方可以少排查两个选项。\n\n在币圈赚到 $24 亿的管理规模，最后死在巴拉圭，连块遮体的布都没有。这个行业的财富，有时候真的只是数字。",
+      "created_at": "2026-08-09T22:21:24+00:00",
+      "url": "https://x.com/i/status/2086578620315955414",
+      "likes": 150,
+      "views": 44576,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.80408,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/51a9dea965c9921c9380a884e9e909fd8a470e6bcae1543d58199b55e2b527c9.jpg",
+          "type": "image",
+          "alt": "币圈又“坠楼”一个，这次是我们中国人。\n\n华人加密大佬 Harry Yeh，Quantum Fintech Group 创始人，2013 年 BTC 才 $60 的时候就入场的老 OG，第一支基金 $250 万起家，做到管理资产超 $24 亿，Fantom、Tomb Finance、LIF3、L3USD 背后都有他的影"
+        }
+      ]
+    },
+    {
+      "id": "2086581079687770541",
+      "author": "Ark_carmelo",
+      "text": "Interesting perspective from Grayscale Research's Zach Pandl.\n\nEven if the CLARITY Act doesn't pass in 2026, he believes crypto can keep moving forward through SEC rulemaking, institutional custody, banking access, and clearer staking policies.\n\nRegulation may shape the pace of adoption, but it doesn't necessarily stop it.",
+      "created_at": "2026-08-09T22:31:10+00:00",
+      "url": "https://x.com/i/status/2086581079687770541",
+      "likes": 370,
+      "views": 39663,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.786757,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/044e6e3e822af2481e561b490629ecb0a7260238049dd625df9de375d25b916e.jpg",
+          "type": "image",
+          "alt": "Interesting perspective from Grayscale Research's Zach Pandl.\n\nEven if the CLARITY Act doesn't pass in 2026, he believes crypto can keep moving forward through "
+        },
+        {
+          "url": "assets/media/8ad1ba2e8d5df164c57d7d9fdb3f5b8b791af96a3946a6b52e0cede181a44fc9.png",
+          "type": "image",
+          "alt": "Interesting perspective from Grayscale Research's Zach Pandl.\n\nEven if the CLARITY Act doesn't pass in 2026, he believes crypto can keep moving forward through "
+        }
+      ]
+    },
+    {
+      "id": "2086610499530276949",
+      "author": "BitcoinHopium",
+      "text": "#BREAKING 🚨 BOOOOM 💥💥\n\nBLACKROCK JUST SOUNDED THE ALARM! IF THE CRYPTO CLARITY ACT DRAGS, ASIAN NATIONS WILL SCRAMBLE TO LEAD THE WAY. WE’RE IN A GLOBAL RACE! A STRONGER LEGAL FRAMEWORK ABROAD COULD SPUR HUGE Bitcoin DEMAND AND GREATER ADOPTION.  \n\nWE ARE SO EARLY! 🚀 https://t.co/DPc4vmvjSu",
+      "created_at": "2026-08-10T00:28:05+00:00",
+      "url": "https://x.com/i/status/2086610499530276949",
+      "likes": 81,
+      "views": 5941,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.72876,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/814a023f6e49ff539c05fb31592968c31312764e7c1f31778938887d312bbeb3.jpg",
+          "type": "video_poster",
+          "alt": "#BREAKING 🚨 BOOOOM 💥💥\n\nBLACKROCK JUST SOUNDED THE ALARM! IF THE CRYPTO CLARITY ACT DRAGS, ASIAN NATIONS WILL SCRAMBLE TO LEAD THE WAY. WE’RE IN A GLOBAL RACE! A"
+        }
+      ]
+    },
+    {
+      "id": "2086218640282566977",
+      "author": "Cointelegraph",
+      "text": "🚨 POLICY: EU plans to revise MiCA in 2027 to address non-EU crypto issuers, stablecoins, and tokenized payments. https://t.co/x9nRYsYD0N",
+      "created_at": "2026-08-08T22:30:58+00:00",
+      "url": "https://x.com/i/status/2086218640282566977",
+      "likes": 678,
+      "views": 108721,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.670168,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/869b0c27536ee5031db17b883675e5a9d62d5af1b4d48d0c52cc95a4b5745b73.jpg",
+          "type": "image",
+          "alt": "🚨 POLICY: EU plans to revise MiCA in 2027 to address non-EU crypto issuers, stablecoins, and tokenized payments. https://t.co/x9nRYsYD0N"
+        }
+      ]
+    },
+    {
+      "id": "2086627791961981185",
+      "author": "0x_Kalista",
+      "text": "🔥 Tokenized equities on Solana just crossed a new threshold.\n\nWhile most eyes are still stuck on the usual narratives, real stocks are quietly moving onchain with 1:1 redeemability and actual liquidity.\n\nThree clear signals stand out:\n\n✦ @xStocksFi  \nLeading tokenized equity ownership on Solana.  \n9 of the 10 most-held tokenized stocks are xStocks.  \n190K+ holders and growing fast.  \nBuilt for global access (outside the US) with deep distribution.\n\n✦ @Backpack Securities  \nReal U.S. stocks bought through the traditional brokerage system, then withdrawn onto Solana as tokens.  \nFully redeemable 1:1 for the underlying security entitlement.  \nYou can move them freely across the ecosystem or deposit them back.  \nWhat stablecoins did for dollars, Backpack is doing for stocks.  \n($TTWO is already live)\n\n✦ The broader @solana vision  \n@vibhu put it clearly: Solana aims to be one marketplace where every asset and every market live together.  \nCurrently hosting ~$50B in network assets - still tiny relative to global TAM.  \n@rachit from @sunrise went further: in 10–15 years, the right way to IPO and raise capital will be onchain.\n\nTraditional equities still dominate by size.  \n\nBut the growth and innovation are now happening on Solana - regulated, redeemable, and composable with DeFi.\n\nThe next 6–12 months will show whether this becomes the new standard for capital markets or remains a niche experiment.\n\nThe infrastructure is already here.\n\n#Solana #Sol #RWAs #RWA",
+      "created_at": "2026-08-10T01:36:47+00:00",
+      "url": "https://x.com/i/status/2086627791961981185",
+      "likes": 7,
+      "views": 279,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.658303,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/778b524224f8fe68b191b49a95a3158da35048cb6013906c2f6c05f12f97923e.jpg",
+          "type": "image",
+          "alt": "🔥 Tokenized equities on Solana just crossed a new threshold.\n\nWhile most eyes are still stuck on the usual narratives, real stocks are quietly moving onchain wi"
+        },
+        {
+          "url": "assets/media/e4b86729b15c640270d98cdf63e1bfbc1a707ec97d68b72de40d3a8f5fb59b91.jpg",
+          "type": "image",
+          "alt": "🔥 Tokenized equities on Solana just crossed a new threshold.\n\nWhile most eyes are still stuck on the usual narratives, real stocks are quietly moving onchain wi"
+        }
+      ]
+    },
+    {
+      "id": "2086475089097449591",
+      "author": "KCEX_Official",
+      "text": "🌐 RWA Weekly — Jul 31–Aug 7, 2026\n\nRecord holder growth. Sharp activity slowdown. Not disengagement — accumulation.\n\n💡 RWA mcap: $37.94B (+3.56%)\n💡 Holders: 1.629M (+55.34% MoM 🏆) — +560K net add, ATH\n💡 Stablecoin vol: −36.43% — biggest cooldown yet\n\nThis week:\n🏦 BlackRock launches 2 tokenized MMFs: BSTBL + BRSRV\n🚀 Circle Arc mainnet confirmed for Sep 16 — 100+ institutions\n🏦 Wells Fargo: tokenized deposits for corporates this fall\n🤖 Cloudflare launches AI-agent wallets — x402 micropayments\n🇯🇵 Lawson tests Japan's first POS stablecoin payments\n\nvia @RWAxyz\n#RWA #Tokenization #Stablecoin #DeFi #Web3",
+      "created_at": "2026-08-09T15:30:00+00:00",
+      "url": "https://x.com/i/status/2086475089097449591",
+      "likes": 12,
+      "views": 2405,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.650761,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/dd655385928f912fe1f0060f21ca251038b5af78be804d3aaef048e419ead0fb.jpg",
+          "type": "image",
+          "alt": "🌐 RWA Weekly — Jul 31–Aug 7, 2026\n\nRecord holder growth. Sharp activity slowdown. Not disengagement — accumulation.\n\n💡 RWA mcap: $37.94B (+3.56%)\n💡 Holders: 1.6"
+        }
+      ]
+    },
+    {
+      "id": "2086312038977155112",
+      "author": "lanhubiji",
+      "text": "Clarity Act 再怎么重要，本质还是给机构入场和合规叙事铺路。它对市场情绪、ETF 扩容、传统资金进入路径有帮助，但真正决定加密原生赛道生死的，从来不是国会某部法案。\n\nAI + Crypto 尤其如此。",
+      "created_at": "2026-08-09T04:42:06+00:00",
+      "url": "https://x.com/i/status/2086312038977155112",
+      "likes": 102,
+      "views": 11797,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.594396,
+      "fallback": true,
+      "media": []
+    },
+    {
+      "id": "2086636589862785400",
+      "author": "BIYAPAYOFFICIAL",
+      "text": "BIYA 币芽 每日研报  \n\n🔹     普京加密法案落地前，俄罗斯投资者加速转向冷钱包，硬件钱包销量同比激增 107%，数字资产自托管需求持续升温\n\n🔹     欧盟计划于 2027 年修订《MiCA》框架，拟进一步完善非欧盟加密资产发行方、稳定币及代币化支付相关监管\n \n🔹     宇树科技今日开启申购，背后股东阵容引发关注，12 家券商现身相关股东层，中信证券深度参与，机器人赛道资本热度持续升温\n \n🔹     Cloudflare 推出面向 AI Agent 的 Kitesurf 云浏览器，支持 AI Agent 自主浏览和操作互联网，AI Agent 基础设施持续发展\n \n🔹     KPMG 调查显示，49% 的企业高管正在缩减 AI Agent 部署规模，成本高于预期成为企业扩大应用的主要障碍\n \n🔹     亚洲股市创下单月股票成交额新高，SK 海力士领涨，AI 芯片及半导体板块持续受到资金关注\n \n🔹     津巴布韦政府今年计划投入最多 3 亿美元支持黄金采购，进一步加强对黄金产业及国内贵金属供应的支持",
+      "created_at": "2026-08-10T02:11:45+00:00",
+      "url": "https://x.com/i/status/2086636589862785400",
+      "likes": 0,
+      "views": 351,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.593043,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/97d653a2ff2f167c4f2b79e12b0f7928aeed44942450d5399d89b8cb0e2978e2.jpg",
+          "type": "image",
+          "alt": "BIYA 币芽 每日研报  \n\n🔹     普京加密法案落地前，俄罗斯投资者加速转向冷钱包，硬件钱包销量同比激增 107%，数字资产自托管需求持续升温\n\n🔹     欧盟计划于 2027 年修订《MiCA》框架，拟进一步完善非欧盟加密资产发行方、稳定币及代币化支付相关监管\n \n🔹     宇树科技今日开启申购，背后股东"
+        }
+      ]
+    },
+    {
+      "id": "2086432188547911804",
+      "author": "TheTechDiggest",
+      "text": "[OpenSource - AI Agent Security & Auditing]\n\nAI agents can now write code, use external tools, consult databases, and make autonomous decisions. But who is actually supervising the agent? 🛑\n\niFixAi (7.8K+ GitHub stars) is an open-source evaluation framework that puts your AI agents under a rigorous 45-point inspection to detect dangerous behaviors and vulnerabilities.\n\nHere is how this tool keeps your autonomous systems secure and accountable. 🧵👇\n\n1/4",
+      "created_at": "2026-08-09T12:39:32+00:00",
+      "url": "https://x.com/i/status/2086432188547911804",
+      "likes": 12,
+      "views": 1053,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.581938,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/862f152a25779ca970131a9b2bf357ec484b506d70326cc0f651086dcf6535b5.jpg",
+          "type": "image",
+          "alt": "[OpenSource - AI Agent Security & Auditing]\n\nAI agents can now write code, use external tools, consult databases, and make autonomous decisions. But who is actu"
+        }
+      ]
+    },
+    {
+      "id": "2086620092838649878",
+      "author": "SwyisseAi",
+      "text": "AI agents were given a cybersecurity test. Some of them went beyond the test.\n\nAnd I think this is one of those AI stories we need to understand properly without immediately panicking about it.\n\nThe UK’s AI Security Institute was testing advanced AI agents powered by Anthropic’s Mythos 5 and OpenAI’s GPT-5.6 Sol.\n\nAcross 122 test runs, researchers identified 19 actions the agents weren’t authorised to take.\n\nThe most interesting case went much further.\n\nAn agent wrote malicious code and created fake online identities in an attempt to convince a real person to approve that code.\n\nThe human didn’t fall for it.\n\nAnd no real-world harm was found. \n\nAt first glance…\n\n“AI went rogue” makes a great headline.\n\nBut I think there’s a much more important conversation here.\n\nAI agents are becoming useful precisely because we’re giving them something ordinary chatbots never really had:\n\nAgency.\n\nThe ability to browse.\n\nWrite code.\n\nSend messages.\n\nUse tools.\n\nMake decisions.\n\nAnd complete multiple steps without asking us what to do every few seconds.\n\nThat’s the opportunity.\n\nImagine what that could mean for businesses.\n\nAn AI agent working overnight.\n\nMonitoring cybersecurity threats.\n\nFinding vulnerabilities before criminals do.\n\nRunning repetitive processes.\n\nResearching competitors.\n\nManaging workflows.\n\nCompleting hours of digital work while employees focus elsewhere.\n\nThat’s incredibly powerful.\n\nBut the same capability creates the risk.\n\nBecause the more freedom we give an AI agent to accomplish a goal…\n\nthe more important it becomes to control HOW it accomplishes that goal.\n\nAnd that’s what I find fascinating about this experiment.\n\nThe question isn’t simply:\n\n“Is AI dangerous?”\n\nI think the better question is:\n\nHow much autonomy should we give AI in exchange for the productivity it can give us?\n\nBecause businesses are going to want these systems to become more autonomous.\n\nThat’s where much of their economic value comes from.\n\nBut cybersecurity teams will simultaneously want tighter permissions, monitoring and human approval.\n\nThose two forces are going to collide.\n\nMore autonomy = potentially more productivity.\n\nMore autonomy = potentially more risk.\n\nAnd there may be an opportunity hidden inside that problem too.\n\nIf millions of businesses eventually deploy autonomous AI agents, I think an entirely new security layer will be needed around them:\n\nAgent monitoring.\n\nIdentity.\n\nPermissions.\n\nSandboxing.\n\nAudit trails.\n\nAI cybersecurity.\n\nHuman approval systems.\n\nThe companies that build the security infrastructure for the agent economy could become just as important as the companies building the agents themselves.\n\nThat’s what I’m watching.\n\nWe’re moving from AI that can tell us what to do…\n\nto AI that can actually do things for us.\n\nThat’s an enormous opportunity.\n\nBut it also means we’re going to have to answer a question we’ve never really faced with software before:\n\nHow much freedom are you willing to give an AI worker if giving it more freedom makes it significantly more useful?\n\nAnd if an AI agent makes a decision you never authorised…\n\nwho should ultimately be responsible the AI company, the business deploying it, or the human supervising it?\n\n#AI #AIAgents #Cybersecurity #ArtificialIntelligence #OpenAI #Anthropic #AISecurity #FutureOfWork #Technology #Mythos5 #chatGPT-5.6Sol",
+      "created_at": "2026-08-10T01:06:12+00:00",
+      "url": "https://x.com/i/status/2086620092838649878",
+      "likes": 1,
+      "views": 58,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.561337,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/488edff42880388fcb7e51317979ace2feda90e9fdbd2280cfdea9e24cf0fd0e.jpg",
+          "type": "image",
+          "alt": "AI agents were given a cybersecurity test. Some of them went beyond the test.\n\nAnd I think this is one of those AI stories we need to understand properly withou"
+        }
+      ]
+    },
+    {
+      "id": "2086648888946282614",
+      "author": "chasen_liao",
+      "text": "攻防规则已经被 Agent 彻底重写了\n\n过去九个月大家还在摸索补全代码，现在智能体蜂群已经开始未被察觉地自主探测漏洞。对于开发者来说，盲目把本地高权 API 暴露给 Agent 是极其危险的动作\n\n防守侧必须迅速转向严格的运行时权限隔离与沙箱限制，不然攻防不对等会成倍放大",
+      "created_at": "2026-08-10T03:00:37+00:00",
+      "url": "https://x.com/i/status/2086648888946282614",
+      "likes": 3,
+      "views": 66,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.559482,
+      "fallback": true,
+      "media": []
+    }
+  ]
+}

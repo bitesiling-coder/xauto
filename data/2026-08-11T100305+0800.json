@@ -1,0 +1,337 @@
+{
+  "version": 1,
+  "generated_at": "2026-08-11T10:03:05.658364+08:00",
+  "timezone": "Asia/Singapore",
+  "fallback_used": true,
+  "summary": {
+    "posts": 12,
+    "authors": 12,
+    "media": 15,
+    "engagement": 573295
+  },
+  "topics": [
+    {
+      "id": "ai-agents-security",
+      "label": "AI Agents 与 Agent Security",
+      "family": "AI",
+      "posts": 2,
+      "score": 0.74118,
+      "top_keyword": "Autonomous AI Agents"
+    },
+    {
+      "id": "world-models-embodied-ai",
+      "label": "World Models 与 Embodied AI",
+      "family": "AI",
+      "posts": 1,
+      "score": 0.739462,
+      "top_keyword": "World Models"
+    },
+    {
+      "id": "rwa-stablecoin-payments",
+      "label": "RWA 与 Stablecoin Payments",
+      "family": "Web3",
+      "posts": 7,
+      "score": 0.767768,
+      "top_keyword": "Tokenized Stocks"
+    },
+    {
+      "id": "prediction-markets-regulation",
+      "label": "Prediction Markets 与 Crypto Regulation",
+      "family": "Web3",
+      "posts": 2,
+      "score": 0.745087,
+      "top_keyword": "Prediction Markets"
+    }
+  ],
+  "posts": [
+    {
+      "id": "2086787493333192721",
+      "author": "SafePal",
+      "text": "UNITREE spot RWA Vault is now live on Questhub!\nSafePal × @sodex_official brings Asia's robotics leader to your wallet:\n✅ Min entry from 100 USDC\n✅Share in a $10,000 #UNITREE pool\n✅Subscribe more for bigger weighting\nAug 10 – Aug 15 12PM UTC\nJoin now: https://t.co/I8rHlU4Y0p https://t.co/yPZtSsNfU9",
+      "created_at": "2026-08-10T12:11:23+00:00",
+      "url": "https://x.com/i/status/2086787493333192721",
+      "likes": 76,
+      "views": 13390,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.794432,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/7552d43efcf0458b02e2dcaa20d75524ec7318148ed2d1d5a223b92abee1da58.png",
+          "type": "image",
+          "alt": "UNITREE spot RWA Vault is now live on Questhub!\nSafePal × @sodex_official brings Asia's robotics leader to your wallet:\n✅ Min entry from 100 USDC\n✅Share in a $1"
+        }
+      ]
+    },
+    {
+      "id": "2086743790019367274",
+      "author": "TriMaiMS",
+      "text": "Robinhood đang thật sự kéo sóng NFT quay trở lại 👀\n\nTừ StonkBrokers $0 → $24K, hệ sinh thái NFT quanh Robinhood đang bắt đầu nóng lên.\n\n11 dự án Early NFT ae có thể theo dõi để săn WL / Early Access:\n\n1. @flourmarkets\nPrediction market NFT đầu tiên được xây dựng trên Robinhood Chain.\n2. @BlastoonsNFT\n3.000 NFT tên lửa vũ trụ trên Robinhood Chain.\n\n3. @beanhoodNFT\n4.444 Beans trên Robinhood Chain, kết hợp phí giao dịch với tokenized stocks.\n4. @PrimeBrokersNFT\n4.444 NFT theo concept trading desk.\n\n5. @hoodskerb\n1.000 Skerbs độc quyền — Mint. Hold. Earn.\n6. @xnfts_network\nHệ sinh thái NFT tập trung vào tokenized stocks trên Solana.\n\n7. @JustBannersNFT\nNFT collection tập trung vào banner, xây dựng trên Robinhood.\n8. @mooncershood\nOnchain collection với mint được hỗ trợ bởi $MANCER.\n\n9. @hoodbrutesclub\n3.000 Brutes vẽ tay, dự kiến ra mắt trên Robinhood Chain.\n10. @hoodstarzArt\n3.333 HoodstarZ xoay quanh hệ sinh thái Robinhood.\n\n11. @Outlandersonrh\nNFT collection sắp ra mắt trên Robinhood.\n\n🔥 Điểm đáng chú ý:\nNarrative NFT trên Robinhood vẫn còn khá sớm.\n\nAe thích NFT trên Robinhood không, mình sẽ cố gắng lấy WL về GA cho mn hẹ hẹ \n\nĐây là thông tin, không xem là lời khuyên đầu tư.",
+      "created_at": "2026-08-10T09:17:44+00:00",
+      "url": "https://x.com/i/status/2086743790019367274",
+      "likes": 81,
+      "views": 18720,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.78455,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/c13098a4d46d68c24b238a3e9f765b04bfcc91878cb0ebd0ac563fd3934f72bc.jpg",
+          "type": "image",
+          "alt": "Robinhood đang thật sự kéo sóng NFT quay trở lại 👀\n\nTừ StonkBrokers $0 → $24K, hệ sinh thái NFT quanh Robinhood đang bắt đầu nóng lên.\n\n11 dự án Early NFT ae có"
+        },
+        {
+          "url": "assets/media/fead5d90b8e5a77296f8feec6babbf9ff6bce83590f66322c0392e32a0be41df.png",
+          "type": "image",
+          "alt": "Robinhood đang thật sự kéo sóng NFT quay trở lại 👀\n\nTừ StonkBrokers $0 → $24K, hệ sinh thái NFT quanh Robinhood đang bắt đầu nóng lên.\n\n11 dự án Early NFT ae có"
+        }
+      ]
+    },
+    {
+      "id": "2086854244590588367",
+      "author": "Web3Marmot",
+      "text": "🚨 SOMETHING VERY STRANGE IS HAPPENING\n\n-  Saylor selling BTC again\n-  Miners dumped 23K BTC\n-  CLARITY Act delayed\n-  Record ETF outflows\n\nAnd the price didn't even drop.\n\nDo you understand what it means?\n\nNormally, this would trigger a bloodbath.\n\nBut now Bitcoin is absorbing everything.\n\nThis unexpected strength is forcing me to reconsider my bearish bias.\n\nBut I still believe a final flash crash is the higher-probability outcome.\n\nBecause Saylor holds too much supply.\n\nWhales can't comfortably pump while one entity owns that much systemic risk.\n\nTo fuel a real supercycle, they might need one final panic to shake him out.\n\nScenario 1 (Bullish): $64K → $74K → $95K\n\nScenario 2 (Bearish): $64K → $57K → $49K\n\nI'm still leaning toward Scenario 2, but this absorption is a massive signal.\n\nReminder: I've called every major market turn for the last 10 years, including Bitcoin's crash from $111K, the $82K bull trap, and the SpaceX drop from $220 to $105.\n\nThe moment I make my first buy, I’ll post it right here.\n\nStay close.",
+      "created_at": "2026-08-10T16:36:38+00:00",
+      "url": "https://x.com/i/status/2086854244590588367",
+      "likes": 155,
+      "views": 56990,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.7824,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/2034a2a6ea6993bbbbdf4c1ca4067c9df954238ed5ef622fd2e026fb209b649e.jpg",
+          "type": "video_poster",
+          "alt": "🚨 SOMETHING VERY STRANGE IS HAPPENING\n\n-  Saylor selling BTC again\n-  Miners dumped 23K BTC\n-  CLARITY Act delayed\n-  Record ETF outflows\n\nAnd the price didn't "
+        },
+        {
+          "url": "assets/media/aa69a1567ae78caf7e7d85dd11a2e081f2cb514434d92255704b13a902f373c6.png",
+          "type": "image",
+          "alt": "🚨 SOMETHING VERY STRANGE IS HAPPENING\n\n-  Saylor selling BTC again\n-  Miners dumped 23K BTC\n-  CLARITY Act delayed\n-  Record ETF outflows\n\nAnd the price didn't "
+        },
+        {
+          "url": "assets/media/c220aca67cc8bb47ab324361ca5109ab824a90a48e0601192c31efc970c8023c.png",
+          "type": "image",
+          "alt": "🚨 SOMETHING VERY STRANGE IS HAPPENING\n\n-  Saylor selling BTC again\n-  Miners dumped 23K BTC\n-  CLARITY Act delayed\n-  Record ETF outflows\n\nAnd the price didn't "
+        }
+      ]
+    },
+    {
+      "id": "2086437339769774452",
+      "author": "solana",
+      "text": "A $15T asset manager. A 175-year-old payments giant. A billion transactions in seven days. Different sides of finance, all moving through one network. Solana.\n\nHere’s everything that happened this week:\n\n📰 Headline News\n\n- @BlackRock filed with the SEC to issue tokenized BRSRV fund shares on Solana\n\n- @WesternUnion launched its USDPT-powered Stablecard with @raincards across 37 markets\n\n- Solana processed a record 1.01B non-vote transactions in a single week\n\n📰 Launches\n\n- Take-Two Interactive’s $TTWO stock went live on Solana via @sunrise, issued by @Backpack Securities\n\n- @kamino launched Kamino Institutional Yield with an initial $25M Commodity Yield vault\n\n- @AllUnityStable brought CHFAU, the first fully MiCAR-compliant Swiss franc stablecoin, to Solana\n\n- @perena introduced Smart Borrow, powered by @hobba_io, to borrow without sacrificing yield\n\n- @upshift_fi launched @sharpbytexyz’s RWA Ecosystem Vault, allocating to RWA cash flows including @onrefinance’s ONyc\n\n- @solomon_labs deployed the USDv program on Solana mainnet\n\n- @phygitals debuted a Solana-native RWA mobile app\n\n- @rarible opened its Solana marketplace, with @Claynosaurz as its first featured collection\n\n- @metaplex added real-time quotes, Jito tipping, and MEV protection to its trading interface\n\n- @nuketrade rolled out its public beta, bringing institutional-grade market-neutral strategies onchain\n\n- @Alchemy shipped Solana Account Archive for querying account states at any historical slot\n\n- @Titan_Exchange opened Titan Pro early access for CEX-style onchain spot trading\n\n- @triton_one launched Riptide endpoints and Triton Shred Streaming with @DoubleZero\n\n- @0xProject made its Swap API available on Solana\n\n- @SaharaAI enabled Solana trading on @HeySorinAI via @OKX OnchainOS\n\n- @TradeNeutral shipped Neutral Autopilot for automated strategy and yield optimization\n\n- SIMD-0525 cut testnet target slot time from 400ms to 350ms, the first step toward 200ms target\n\n- @SatRushIO debuted SatRush, a gamified Bitcoin-mining reward protocol\n\n- @crittersquest launched Lucky Pick Mines on Solana\n\n- @magicblock and @SuperteamTH opened applications for the MagicBlock Founders Camp\n\n- Solana’s poker series returns at Breakpoint 2026 and WSOP Bahamas following the @WSOP Solana Showdown in Vegas\n\n- @SuperteamKorea set Solana Summit Korea for September 30 in Seoul\n\n- @solanaturbine opened Q3 applications for its revamped Builders Program\n\n- @spenders_club brings Solana Summer House back to LA on August 29 with @solanaspaces, @SolanaEvents, and @SolanaFndn\n\n📰 Milestones\n\n- Solana captured ~$1.45B in July tokenized-equities volume, representing ~82% global market share\n\n- Tokenized Micron ($MU) shares topped $530M in spot volume within six weeks of launch\n\n- @ArcherExchange_ surpassed 1M trades on Solana\n\n- WSOP Solana Showdown crowned its first bracelet champion, @rasmr_eth\n\n- Frontier Traders crossed $1B in combined tokenized-equity spot and perps volume\n\n- @Rosentica One Arena crossed $3.3M in volume across 7.5K matches\n\n- @ShiftRWA crossed 1K unique tokenized-equity holders\n\n- @CandyDigital recorded its 5,000th digital collectible sale\n\n- @SolanaMBS marked five years since the Solana Monkey Business mint\n\n- @xStocksFi crossed 190K holders on Solana\n\nIf you enjoyed this week’s newsletter, repost it!\n\nArtwork by @ket_on_solana",
+      "created_at": "2026-08-09T13:00:00+00:00",
+      "url": "https://x.com/i/status/2086437339769774452",
+      "likes": 1656,
+      "views": 246031,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.768428,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/24bcb4c34f71ad6966671510b673cdde75f0f48fbfbc88f85250f3675c4c00f6.jpg",
+          "type": "video_poster",
+          "alt": "A $15T asset manager. A 175-year-old payments giant. A billion transactions in seven days. Different sides of finance, all moving through one network. Solana.\n\n"
+        }
+      ]
+    },
+    {
+      "id": "2086911681460842593",
+      "author": "real_dr_pump",
+      "text": "随着今天 $MANLET（$ANSEM 底池）的启动，一个全新的飞轮正在 Solana 上演。\n\n@LaunchOnSF 成为这一轮底池战争中 Solana 唯一的赢家\n\n目前的几个龙头\n1️⃣ 币股方面龙头有和 $TTWO 配对的 $GTA6 (R星的母公司)\n2️⃣ Pre-ipo 方面有和 Anthropic 配对的 solana:7ssJZGFT3twGqeYA1kvpoMWwZYvMZvrMEbjRaWgg46BL \n3️⃣ Meme 方面有和 $ANSEM 配对的 $MANLET \n\n而这一切的价值又会回流到 $STONK 以及平台上的顶级代币（手续费会用来回购并销毁平台市值排名前十的代币）",
+      "created_at": "2026-08-10T20:24:52+00:00",
+      "url": "https://x.com/i/status/2086911681460842593",
+      "likes": 16,
+      "views": 4906,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.76628,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2086785235552022814",
+      "author": "DL0868",
+      "text": "上午发的这个，还真有很多兄弟不知道现在新NFT项目在螺旋起飞！\n\n那我整理一下这些NFT 每个项目的叙事：\n\n1️⃣ @OxSimpleFarmer  — 免费 mint\nStonkLauncher，Robinhood 链最大 NFT 飞轮。4,444 个 broker，激活后自动收 tokenized stocks 分红。马上上线 StonkLauncher，要做这条链的 Pumpfun + Virtuals。\n\n2️⃣ @MancerXYZ  — 免费 mint\nChainMancers ，由 @MichaelHirsch 主导。链上魔法师主题 PFP，和 StonkBrokers 生态深度绑定。免费 mint 跑出来的社区驱动型案例。\n\n3️⃣ @stonkpit  — 免费 mint\nStonkPit 浏览器挖矿游戏 + PitBoys/MineBoys 伴生项目。矿工角色 + 收藏品双属性。\n\n4️⃣ @ZaibatsuWagies — mint 2U\n日企社畜 meme。burn $ZAIBATSU 打卡上班，领 $GME tokenized 股票工资。梗玩得很到位。\n\n5️⃣ @pyopyopyo410 — mint  2.69U\n日系可爱纯社区 meme PFP。没有复杂 tokenomics，靠 vibe 撑着。\n\n6️⃣@cashcatss — mint  1.5U\n10,000 只 cash cats，Robinhood 链 meme coin 圈子的一员。和 $CASHCAT / meme meta 深度绑定。\n\n7️⃣ @GremlinCartel — mint  1.92U\nRobinhood 官方吉祥物，@robinhoodcrypto 的 mascot。马上开 staking，跟 @rialto_xyz 合作，还要进 OthersideMeta。\n\n8️⃣ @MonkeyHoodNFT — 免费 mint\nRobinhood 链的猴宇宙。1.3 万粉。升级猴子自动收真实股票空投，不需要 stake 和签名。\n\n9️⃣ @RobertCoinRH — mint  38U\nFor The Birds，由 @fxnction 设计。Mint 价最贵（$38），自嘲梗「一文不值」。鸟主题，小众但活得挺好。\n\n🔟 @OnChainHoodies — mint  2U\n这条链的老 OG，去年 11 月就入场了。1-bit 手绘卫衣，每个配一个链上钱包，更像 passport 而不是头像。\n\n这波 NFT 的叙事明显和上一轮不一样了。\n\n不是单纯比谁地板高、谁更稀有。\n\n三条线分工很明确：\n\n1. RWA 分红线 — @OxSimpleFarmer、@MonkeyHoodNFT、@ZaibatsuWagies，核心是 NFT 持有者直接收 tokenized stocks。\n2. 官方生态线 — @GremlinCartel 直接挂着 Robinhood 官方的光环。\n3. 社区 meme 线 — 剩下的靠早期红利和社区文化。\n\n一条新链，流动性还浅，波动肯定大。\n\n但免费 mint 的东西能跑出这个级别的财富效应，说明资金已经在往这条链上转移了。\n\n真可以关注了，更新了一下最新价格！",
+      "created_at": "2026-08-10T12:02:25+00:00",
+      "url": "https://x.com/i/status/2086785235552022814",
+      "likes": 57,
+      "views": 4153,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.76363,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/0a5b748f72f1d93fa08a8e264cf9b1a642c7af16a3519fa04ec8343f31f79afb.png",
+          "type": "image",
+          "alt": "上午发的这个，还真有很多兄弟不知道现在新NFT项目在螺旋起飞！\n\n那我整理一下这些NFT 每个项目的叙事：\n\n1️⃣ @OxSimpleFarmer  — 免费 mint\nStonkLauncher，Robinhood 链最大 NFT 飞轮。4,444 个 broker，激活后自动收 tokenized stocks "
+        },
+        {
+          "url": "assets/media/c41dd0a15aa4f4e034d6a7a39ba29ce6f2f2a0d991802ff4f66f964f2a06f563.jpg",
+          "type": "image",
+          "alt": "上午发的这个，还真有很多兄弟不知道现在新NFT项目在螺旋起飞！\n\n那我整理一下这些NFT 每个项目的叙事：\n\n1️⃣ @OxSimpleFarmer  — 免费 mint\nStonkLauncher，Robinhood 链最大 NFT 飞轮。4,444 个 broker，激活后自动收 tokenized stocks "
+        }
+      ]
+    },
+    {
+      "id": "2086701581601251580",
+      "author": "coinbureau",
+      "text": "🚨WILD: AI Agent hacks gym booking system to move user up waitlist.\n\nAn Australian man asked his Claude-powered OpenClaw agent to book a popular gym class. \n\nThe agent first exploited a vulnerability to bypass booking restrictions, then discovered the API had no authorization checks for cancelling other users’ reservations and cancelled the person ahead of its user on the waitlist.\n\nThe incident offers a chilling glimpse into the risks of autonomous AI agents given broad access to real-world systems and instructed to complete tasks by any means necessary.",
+      "created_at": "2026-08-10T06:30:00+00:00",
+      "url": "https://x.com/i/status/2086701581601251580",
+      "likes": 283,
+      "views": 42733,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.757827,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/d01b91bcf484dce7f7045b3973fa1dc35ddc01a1ebfe10180611bd159f2583e4.png",
+          "type": "image",
+          "alt": "🚨WILD: AI Agent hacks gym booking system to move user up waitlist.\n\nAn Australian man asked his Claude-powered OpenClaw agent to book a popular gym class. \n\nThe"
+        },
+        {
+          "url": "assets/media/0b1c6eedaa3879ceaf308d2dae5f5628773b5ec95ef7e5a24f4a999616a0f8be.png",
+          "type": "image",
+          "alt": "🚨WILD: AI Agent hacks gym booking system to move user up waitlist.\n\nAn Australian man asked his Claude-powered OpenClaw agent to book a popular gym class. \n\nThe"
+        }
+      ]
+    },
+    {
+      "id": "2086715841945485647",
+      "author": "Solana_zh",
+      "text": "一家管理规模达 15 万亿美元的资产管理公司、一家拥有 175 年历史的支付巨头、以及 7 天内突破 10 亿笔交易的区块链——来自金融业不同领域的力量，都正在通过同一个网络运行：Solana。\n\n以下是本周发生的所有重要动态：\n\n📰 头条新闻\n\n- @BlackRock 已向美国证券交易委员会（SEC）提交申请，计划在 Solana 上发行代币化的 BRSRV 基金份额；\n- @WesternUnion 与 @raincards 合作，在 37 个市场推出由 USDPT 驱动的 Stablecard；\n- Solana 单周处理的非投票交易达到创纪录的 10.1 亿笔\n\n📰 产品上线\n\n- Take-Two Interactive 的 $TTWO 股票通过 @sunrise 上线 Solana，由 @Backpack Securities 发行；\n- @kamino 推出 Kamino Institutional Yield，首个商品收益 Vault 初始规模为 2500 万美元；\n- @AllUnityStable 将 CHFAU 引入 Solana。这是首个完全符合 MiCAR 监管要求的瑞士法郎稳定币；\n- @perena 推出由 @hobba_io 提供支持的 Smart Borrow，让用户无需牺牲收益即可进行借贷；\n- @upshift_fi 推出 @sharpbytexyz 的 RWA 生态金库，将资金配置到各种 RWA 现金流，包括 @onrefinance 的 ONyc；\n- @solomon_labs 在 Solana 主网上部署 USDv 项目；\n- @phygitals 推出原生于 Solana 的 RWA 移动应用；\n- @rarible 开放其 Solana 市场，首个重点展示的收藏品系列为 @Claynosaurz；\n- @metaplex 为其交易界面增加实时报价、Jito 小费以及 MEV 保护；\n- @nuketrade 推出公开测试版，将机构级市场中性策略带到链上；\n- @Alchemy 发布 Solana Account Archive，支持查询任意历史 Slot 时刻的账户状态；\n- @Titan_Exchange 开放 Titan Pro 抢先体验，提供类似中心化交易所的链上现货交易体验；\n- @triton_one 与 @DoubleZero 合作推出 Riptide endpoints 和 Triton Shred Streaming；\n- @0xProject 的 Swap API 现已支持 Solana；\n- @SaharaAI 通过 @OKX OnchainOS，在 @HeySorinAI 上支持 Solana 交易；\n- @TradeNeutral 推出 Neutral Autopilot，用于自动化策略和收益优化；\n- SIMD-0525 将测试网目标 Slot 时间从 400 毫秒缩短至 350 毫秒，迈向 200 毫秒目标的第一步；\n- @SatRushIO 推出 SatRush，一个游戏化的比特币挖矿奖励协议；\n- @crittersquest 在 Solana 上推出 Lucky Pick Mines；\n- @magicblock 与 @SuperteamTH 开放 MagicBlock Founders Camp 申请；\n- 在拉斯维加斯 @WSOP Solana Showdown 之后，Solana 扑克系列赛将于 Breakpoint 2026 和 WSOP Bahamas 回归；\n- @SuperteamKorea 宣布 Solana Summit Korea 将于 9 月 30 日在首尔举行；\n- @solanaturbine 开放第三季度新版 Builders Program 申请；\n- @spenders_club 将于 8 月 29 日携手 @solanaspaces、@SolanaEvents 和 @SolanaFndn，把 Solana Summer House 带回洛杉矶\n\n📰 里程碑\n\n- Solana 7 月代币化股票交易量达到约 14.5 亿美元，占全球市场份额约 82%；\n- 代币化 Micron ($MU) 股票上线仅六周，现货交易量就突破 5.3 亿美元；\n- @ArcherExchange_ 在 Solana 上的交易笔数突破 100 万笔；\n- WSOP Solana Showdown 诞生首位冠军金手链得主：@rasmr_eth；\n- Frontier Traders 的代币化股票现货与永续合约累计交易量突破 10 亿美元；\n- @Rosentica One Arena 在 7500 场比赛中累计交易量突破 330 万美元；\n- @ShiftRWA 的代币化股票独立持有者数量突破 1000 人；\n- @CandyDigital 完成第 5,000 笔数字收藏品销售；\n- @SolanaMBS 纪念 Solana Monkey Business 铸造五周年；\n- @xStocksFi 在 Solana 上的持有者数量突破 19 万人。\n\n🎨 配图 @ket_on_solana",
+      "created_at": "2026-08-10T07:26:40+00:00",
+      "url": "https://x.com/i/status/2086715841945485647",
+      "likes": 104,
+      "views": 5287,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.751171,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/04654e7e25677b68e1704db02df73f1c3c7487455724c8df91c3a59bcc95b48c.jpg",
+          "type": "video_poster",
+          "alt": "一家管理规模达 15 万亿美元的资产管理公司、一家拥有 175 年历史的支付巨头、以及 7 天内突破 10 亿笔交易的区块链——来自金融业不同领域的力量，都正在通过同一个网络运行：Solana。\n\n以下是本周发生的所有重要动态：\n\n📰 头条新闻\n\n- @BlackRock 已向美国证券交易委员会（SEC）提交申请，计划"
+        }
+      ]
+    },
+    {
+      "id": "2086578620315955414",
+      "author": "CryptoApprenti1",
+      "text": "币圈又“坠楼”一个，这次是我们中国人。\n\n华人加密大佬 Harry Yeh，Quantum Fintech Group 创始人，2013 年 BTC 才 $60 的时候就入场的老 OG，第一支基金 $250 万起家，做到管理资产超 $24 亿，Fantom、Tomb Finance、LIF3、L3USD 背后都有他的影子。\n\n8 月 7 日凌晨，巴拉圭亚松森 Jade Park 公寓，警方凌晨 4 点半接到报警：他从 30 楼摔了下来。\n\n细节一个比一个离谱：\n\n— 被发现时全身赤裸，身上盖着一个黑色塑料袋\n— 30 楼公寓大门敞开，屋内被翻得一片狼藉\n— 他在同一栋楼还有一套 27 楼的公寓，也被搜证\n— 29 岁的巴西女友对警方表示“什么都不知道”\n\n检方说正在排查三种可能：意外、自杀、他杀。\n\n我看完细节，觉得检方可以少排查两个选项。\n\n在币圈赚到 $24 亿的管理规模，最后死在巴拉圭，连块遮体的布都没有。这个行业的财富，有时候真的只是数字。",
+      "created_at": "2026-08-09T22:21:24+00:00",
+      "url": "https://x.com/i/status/2086578620315955414",
+      "likes": 150,
+      "views": 44576,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.745885,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/51a9dea965c9921c9380a884e9e909fd8a470e6bcae1543d58199b55e2b527c9.jpg",
+          "type": "image",
+          "alt": "币圈又“坠楼”一个，这次是我们中国人。\n\n华人加密大佬 Harry Yeh，Quantum Fintech Group 创始人，2013 年 BTC 才 $60 的时候就入场的老 OG，第一支基金 $250 万起家，做到管理资产超 $24 亿，Fantom、Tomb Finance、LIF3、L3USD 背后都有他的影"
+        }
+      ]
+    },
+    {
+      "id": "2086955377250152800",
+      "author": "mkratsios47",
+      "text": "Open-weight models put American AI innovation directly into the hands of developers, researchers, and startups. This is exactly the kind of leadership @POTUS's AI Action Plan calls for, and we're excited to see labs across the U.S. ecosystem continuing to invest in open, accessible AI.",
+      "created_at": "2026-08-10T23:18:30+00:00",
+      "url": "https://x.com/i/status/2086955377250152800",
+      "likes": 615,
+      "views": 64510,
+      "topic": "world-models-embodied-ai",
+      "family": "AI",
+      "keywords": [
+        "\"World Models\" OR 世界模型 OR \"Open-weight Models\" OR AGI OR \"Intelligence Explosion\" OR \"Embodied AI\" OR 具身智能 OR \"Humanoid Robots\""
+      ],
+      "score": 0.739462,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2086751998565868005",
+      "author": "bi_9527zx",
+      "text": "🚀 重磅开源！Prime Agent 来了\n\n一个真正会自我进化的 AI 编程特工。\n\n不是普通的 Chat 工具，而是：\n\n• 递归语言模型（RLM）架构\n\n• 持久化 IPython 环境，一切皆代码\n\n• 内置子代理并行干活\n\n• 自动 /refine 自我改进，越用越强\n\n• 支持连续跑几天几夜的长期自主任务\n\n安装一行命令：\n\ncurl -fsSL https://t.co/1hMsRtK3vo | sh\n\n已经 12k+ stars，MIT 开源，直接起飞 🔥\n\nGitHub：https://t.co/lDsApMWxHY\n\n#AI #Agent #OpenSource #编程智能体",
+      "created_at": "2026-08-10T09:50:21+00:00",
+      "url": "https://x.com/i/status/2086751998565868005",
+      "likes": 55,
+      "views": 13915,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.724533,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/3dead50246d4e23d321d35f37a4b39e09369bd816e9642f31a56a0f7fd907bac.jpg",
+          "type": "video_poster",
+          "alt": "🚀 重磅开源！Prime Agent 来了\n\n一个真正会自我进化的 AI 编程特工。\n\n不是普通的 Chat 工具，而是：\n\n• 递归语言模型（RLM）架构\n\n• 持久化 IPython 环境，一切皆代码\n\n• 内置子代理并行干活\n\n• 自动 /refine 自我改进，越用越强\n\n• 支持连续跑几天几夜的长期自主任务\n"
+        }
+      ]
+    },
+    {
+      "id": "2086610499530276949",
+      "author": "BitcoinHopium",
+      "text": "#BREAKING 🚨 BOOOOM 💥💥\n\nBLACKROCK JUST SOUNDED THE ALARM! IF THE CRYPTO CLARITY ACT DRAGS, ASIAN NATIONS WILL SCRAMBLE TO LEAD THE WAY. WE’RE IN A GLOBAL RACE! A STRONGER LEGAL FRAMEWORK ABROAD COULD SPUR HUGE Bitcoin DEMAND AND GREATER ADOPTION.  \n\nWE ARE SO EARLY! 🚀 https://t.co/DPc4vmvjSu",
+      "created_at": "2026-08-10T00:28:05+00:00",
+      "url": "https://x.com/i/status/2086610499530276949",
+      "likes": 662,
+      "views": 54174,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.707775,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/814a023f6e49ff539c05fb31592968c31312764e7c1f31778938887d312bbeb3.jpg",
+          "type": "video_poster",
+          "alt": "#BREAKING 🚨 BOOOOM 💥💥\n\nBLACKROCK JUST SOUNDED THE ALARM! IF THE CRYPTO CLARITY ACT DRAGS, ASIAN NATIONS WILL SCRAMBLE TO LEAD THE WAY. WE’RE IN A GLOBAL RACE! A"
+        }
+      ]
+    }
+  ]
+}
