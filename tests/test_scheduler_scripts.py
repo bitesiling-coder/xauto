@@ -21,7 +21,7 @@ def powershell() -> str:
     return executable
 
 
-def run_powershell(command: str) -> subprocess.CompletedProcess[str]:
+def run_powershell(command: str, *, cwd: Path = PROJECT_ROOT) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             powershell(),
@@ -33,15 +33,287 @@ def run_powershell(command: str) -> subprocess.CompletedProcess[str]:
             "-Command",
             command,
         ],
-        cwd=PROJECT_ROOT,
+        cwd=cwd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
 
 def ps_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def run_git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+
+def require_windows_wsl_git() -> None:
+    if os.name != "nt" or shutil.which("wsl.exe") is None:
+        pytest.skip("Windows Git plus WSL are required for pointer integration tests")
+    probe = subprocess.run(
+        ["wsl.exe", "-d", "Ubuntu", "-e", "git", "--version"],
+        capture_output=True,
+        check=False,
+    )
+    if probe.returncode != 0:
+        pytest.skip("Ubuntu WSL Git is unavailable")
+
+
+def install_scheduler_scripts(project: Path) -> None:
+    scripts = project / "scripts"
+    scripts.mkdir(exist_ok=True)
+    shutil.copy2(INSTALLER, scripts / INSTALLER.name)
+    shutil.copy2(RUNNER, scripts / RUNNER.name)
+
+
+def create_normal_scheduler_repo(tmp_path: Path) -> Path:
+    project = tmp_path / "normal project"
+    project.mkdir(parents=True)
+    assert run_git("init", "-b", "main", cwd=project).returncode == 0
+    install_scheduler_scripts(project)
+    return project
+
+
+def create_linked_scheduler_repo(tmp_path: Path, *, with_pages: bool = True) -> tuple[Path, Path, Path]:
+    root = tmp_path / "跨平台 测试"
+    main = root / "main repo"
+    feature = root / "feature 工作树"
+    pages = feature / ".worktrees" / "x-rag-pages"
+    main.mkdir(parents=True)
+    assert run_git("init", "-b", "main", cwd=main).returncode == 0
+    assert run_git("config", "user.name", "Scheduler Test", cwd=main).returncode == 0
+    assert run_git("config", "user.email", "scheduler@example.invalid", cwd=main).returncode == 0
+    assert run_git("commit", "--allow-empty", "-m", "initial", cwd=main).returncode == 0
+    assert run_git("worktree", "add", "-b", "feature", str(feature), cwd=main).returncode == 0
+    if with_pages:
+        pages.parent.mkdir(parents=True)
+        assert run_git("worktree", "add", "-b", "gh-pages", str(pages), cwd=main).returncode == 0
+
+    install_scheduler_scripts(feature)
+    return main, feature, pages
+
+
+def run_stubbed_installer(project: Path, *, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
+    installer = project / "scripts" / INSTALLER.name
+    runner = project / "scripts" / RUNNER.name
+    wsl_runner = translate_with_wsl(runner)
+    scheduler_stubs = (
+        "function global:New-ScheduledTaskAction { param($Execute, $Argument); [pscustomobject]@{} }; "
+        "function global:New-ScheduledTaskTrigger { param([switch]$Daily, $At); [pscustomobject]@{} }; "
+        "function global:New-ScheduledTaskSettingsSet { param([switch]$StartWhenAvailable, $MultipleInstances); [pscustomobject]@{} }; "
+        "function global:New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel); [pscustomobject]@{} }; "
+        "function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force); "
+        "$global:Registered = $true }; "
+    )
+    command = (
+        f"function global:wsl.exe {{ $global:LASTEXITCODE = 0; {ps_literal(wsl_runner)} }}; "
+        + scheduler_stubs
+        + f"& {ps_literal(str(installer))}"
+        + (" -DryRun" if dry_run else "")
+        + "; if ($global:Registered) { 'REGISTERED' }"
+    )
+    return run_powershell(command, cwd=project)
+
+
+def run_wsl_git(project: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["wsl.exe", "-d", "Ubuntu", "-e", "git", "-C", translate_with_wsl(project), *args],
+        capture_output=True,
+        check=False,
+    )
+
+
+def pointer_files(main: Path, feature: Path, pages: Path | None) -> list[Path]:
+    files = [feature / ".git"]
+    if pages is not None:
+        files.append(pages / ".git")
+    files.extend(sorted(main.joinpath(".git", "worktrees").glob("*/gitdir")))
+    return files
+
+
+def pointer_bytes(main: Path, feature: Path, pages: Path | None) -> dict[Path, bytes]:
+    return {path: path.read_bytes() for path in pointer_files(main, feature, pages)}
+
+
+def overwrite_git_pointer(path: Path, content: bytes) -> None:
+    if os.name == "nt":
+        subprocess.run(["attrib", "-H", str(path)], capture_output=True, check=True)
+    path.write_bytes(content)
+    if os.name == "nt" and path.name == ".git":
+        subprocess.run(["attrib", "+H", str(path)], capture_output=True, check=True)
+
+
+def test_installer_prepares_real_linked_worktrees_for_windows_and_wsl_git(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+
+    before = run_wsl_git(feature, "rev-parse", "--show-toplevel")
+    assert before.returncode == 128
+    sentinel = feature / "do-not-touch.txt"
+    sentinel.write_bytes(b"preserve me exactly\n")
+
+    result = run_stubbed_installer(feature)
+
+    assert result.returncode == 0, result.stderr
+    assert "REGISTERED" in result.stdout
+    assert sentinel.read_bytes() == b"preserve me exactly\n"
+    for worktree in (feature, pages):
+        for args in (("rev-parse", "--show-toplevel"), ("status", "--short"), ("worktree", "list", "--porcelain")):
+            windows = run_git(*args, cwd=worktree)
+            assert windows.returncode == 0, windows.stderr
+            wsl = run_wsl_git(worktree, *args)
+            assert wsl.returncode == 0, wsl.stderr.decode("utf-8", errors="replace")
+            assert b"prunable" not in wsl.stdout
+
+    for marker in (feature / ".git", pages / ".git"):
+        line = marker.read_text(encoding="utf-8").strip()
+        assert line.startswith("gitdir: ")
+        assert ":/" not in line
+        assert "\\" not in line
+    worktree_admin = main / ".git" / "worktrees"
+    for backpointer in worktree_admin.glob("*/gitdir"):
+        line = backpointer.read_text(encoding="utf-8").strip()
+        assert ":/" not in line
+        assert "\\" not in line
+
+
+def test_installer_dry_run_reports_pointer_changes_without_writing_or_registering(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+    before = pointer_bytes(main, feature, pages)
+
+    result = run_stubbed_installer(feature, dry_run=True)
+
+    assert result.returncode == 0, result.stderr
+    assert "would normalize 4 linked-worktree Git pointer file(s)" in result.stdout
+    assert "no Git metadata was changed" in result.stdout
+    assert "REGISTERED" not in result.stdout
+    assert pointer_bytes(main, feature, pages) == before
+
+
+def test_installer_rejects_multiline_marker_without_changing_any_pointer(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+    marker = feature / ".git"
+    overwrite_git_pointer(marker, marker.read_bytes() + b"unexpected second line\n")
+    before = pointer_bytes(main, feature, pages)
+
+    result = run_stubbed_installer(feature)
+
+    assert result.returncode != 0
+    assert "exactly one gitdir line" in result.stdout + result.stderr
+    assert "REGISTERED" not in result.stdout
+    assert pointer_bytes(main, feature, pages) == before
+
+
+def test_installer_rejects_pages_pointer_from_another_repository_without_writes(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path / "expected")
+    rogue_main, rogue_feature, _ = create_linked_scheduler_repo(tmp_path / "rogue", with_pages=False)
+    rogue_marker = rogue_feature / ".git"
+    pages_marker = pages / ".git"
+    overwrite_git_pointer(pages_marker, rogue_marker.read_bytes())
+    rogue_admin = next(rogue_main.joinpath(".git", "worktrees").iterdir())
+    overwrite_git_pointer(rogue_admin / "gitdir", (str(pages_marker).replace("\\", "/") + "\n").encode("utf-8"))
+    before = pointer_bytes(main, feature, pages)
+
+    result = run_stubbed_installer(feature)
+
+    assert result.returncode != 0
+    assert "different Git repository" in result.stdout + result.stderr
+    assert "REGISTERED" not in result.stdout
+    assert pointer_bytes(main, feature, pages) == before
+
+
+def test_installer_rejects_wrong_backpointer_without_changing_any_pointer(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+    feature_admin = next(
+        path for path in main.joinpath(".git", "worktrees").iterdir() if path.name != "x-rag-pages"
+    )
+    overwrite_git_pointer(feature_admin / "gitdir", b"C:/not-the-feature/.git\n")
+    before = pointer_bytes(main, feature, pages)
+
+    result = run_stubbed_installer(feature)
+
+    assert result.returncode != 0
+    assert "backpointer does not reference the exact marker" in result.stdout + result.stderr
+    assert "REGISTERED" not in result.stdout
+    assert pointer_bytes(main, feature, pages) == before
+
+
+def test_installer_rejects_reparse_in_pages_path_without_writing(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path)
+    real_pages = pages.with_name("x-rag-pages-real")
+    pages.rename(real_pages)
+    junction = subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(pages), str(real_pages)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if junction.returncode != 0:
+        pytest.skip(f"Could not create disposable junction: {junction.stderr}")
+    before = pointer_bytes(main, feature, pages)
+    try:
+        result = run_stubbed_installer(feature)
+
+        assert result.returncode != 0
+        assert "reparse point" in result.stdout + result.stderr
+        assert "REGISTERED" not in result.stdout
+        assert pointer_bytes(main, feature, pages) == before
+    finally:
+        os.rmdir(pages)
+        real_pages.rename(pages)
+
+
+def test_installer_safely_skips_normal_repository_and_absent_pages_worktree(tmp_path: Path) -> None:
+    project = create_normal_scheduler_repo(tmp_path)
+
+    result = run_stubbed_installer(project)
+
+    assert result.returncode == 0, result.stderr
+    assert "REGISTERED" in result.stdout
+    assert "0 file(s) normalized" in result.stdout
+    assert (project / ".git").is_dir()
+    assert not (project / ".worktrees").exists()
+
+
+def test_installer_prepares_linked_project_when_pages_worktree_is_absent(tmp_path: Path) -> None:
+    require_windows_wsl_git()
+    main, feature, pages = create_linked_scheduler_repo(tmp_path, with_pages=False)
+
+    result = run_stubbed_installer(feature)
+
+    assert result.returncode == 0, result.stderr
+    assert "REGISTERED" in result.stdout
+    assert "2 file(s) normalized" in result.stdout
+    assert not pages.exists()
+    assert run_git("status", "--short", cwd=feature).returncode == 0
+    assert run_wsl_git(feature, "status", "--short").returncode == 0
+
+
+def test_readme_explains_cross_platform_pointer_scope() -> None:
+    readme = PROJECT_ROOT.joinpath("README.md").read_text(encoding="utf-8")
+
+    assert "linked-worktree Git 指针" in readme
+    assert "Windows Git 与 WSL Git" in readme
+    assert "相对路径" in readme
+    assert "不会处理其他仓库或文件" in readme
 
 
 def test_daily_runner_uses_fail_fast_dashboard_update_pipeline() -> None:
@@ -172,7 +444,9 @@ def test_wsl_stderr_with_nonzero_exit_fails_with_context() -> None:
     assert "NativeCommandError" not in output
 
 
-def test_scheduled_action_uses_direct_exec_and_preserves_literal_path() -> None:
+def test_scheduled_action_uses_direct_exec_and_preserves_literal_path(tmp_path: Path) -> None:
+    project = create_normal_scheduler_repo(tmp_path)
+    installer = project / "scripts" / INSTALLER.name
     command = (
         "$global:FakeWslRunner = \"/mnt/c/path with spaces/`$(throw 'EXPANDED')/\" + "
         "[char]0x4E2D + [char]0x6587 + '/run-daily.sh'; "
@@ -187,13 +461,13 @@ def test_scheduled_action_uses_direct_exec_and_preserves_literal_path() -> None:
         "function global:New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel); [pscustomobject]@{} }; "
         "function global:Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force); "
         "if (-not $Force) { throw 'missing force' }; $global:Registered = $true }; "
-        f"& {ps_literal(INSTALLER_RELATIVE)}; "
+        f"& {ps_literal(str(installer))}; "
         "if (-not $global:ActionOk) { throw 'action stub was not called' }; "
         "if (-not $global:Registered) { throw 'register stub was not called' }; "
         "'ACTION_OK'; 'REGISTERED'"
     )
 
-    result = run_powershell(command)
+    result = run_powershell(command, cwd=project)
 
     assert result.returncode == 0, result.stderr
     assert "ACTION_OK" in result.stdout

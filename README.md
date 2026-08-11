@@ -177,6 +177,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-schedu
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-schedule.ps1 -Distribution Ubuntu -ScheduleTime "10:00"
 ```
 
+注册任务之前，非 `-DryRun` 安装器会先检查本项目的 linked-worktree Git 指针，并把项目根目录的 `.git` marker，以及已经存在的专用 `.worktrees/x-rag-pages/.git` marker 和各自的 Git admin backpointer，规范成使用 `/` 的相对路径，确保 Windows Git 与 WSL Git 都能解析。它只接受同一 common `.git/worktrees/*` 下、反向指针完全匹配且不含符号链接、junction 或其他 reparse point 的元数据；任何不确定状态都会在注册任务前停止。普通仓库的 `.git` 目录会原样跳过，尚未创建 pages worktree 也不会被安装器创建。`-DryRun` 只报告预计转换数量，不修改 Git 元数据或注册任务。这个准备步骤只处理上述本项目的精确 marker/backpointer，不会处理其他仓库或文件，也不会扫描、清理、重置或删除数据。
+
 检查任务定义和最近运行信息：
 
 ```powershell
