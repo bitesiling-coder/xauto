@@ -326,6 +326,7 @@ class XragService:
             "reused": 0,
             "skipped": 0,
             "errors": 0,
+            "translation_errors": 0,
             "updated_documents": 0,
             "missing_source_files": 0,
             "chunks": 0,
@@ -346,6 +347,7 @@ class XragService:
                     counts["skipped"] += outcome.skipped
                     for failure in outcome.errors:
                         counts["errors"] += 1
+                        counts["translation_errors"] += 1
                         self._log_error(
                             "translation",
                             f"{self._post_id(item)}:{failure.owner}",
@@ -366,13 +368,6 @@ class XragService:
 
             try:
                 rebuild_counts = self._rebuild_atomic()
-                counts["chunks"] = rebuild_counts["chunks"]
-                if rebuild_counts["errors"]:
-                    counts["errors"] += rebuild_counts["errors"]
-                    self._write_last_run("translation-backfill", counts)
-                    raise RuntimeError("translation index rebuild failed")
-            except RuntimeError:
-                raise
             except Exception as error:
                 counts["errors"] += 1
                 self._log_error(
@@ -382,7 +377,12 @@ class XragService:
                     fixed_message="translation index rebuild failed",
                 )
                 self._write_last_run("translation-backfill", counts)
-                raise RuntimeError("translation index rebuild failed") from None
+                return counts
+            counts["chunks"] = rebuild_counts["chunks"]
+            if rebuild_counts["errors"]:
+                counts["errors"] += rebuild_counts["errors"]
+                self._write_last_run("translation-backfill", counts)
+                raise RuntimeError("translation index rebuild failed")
 
             after_paths, after_media_hashes = self._source_manifest()
             missing = before_paths - after_paths
@@ -411,6 +411,7 @@ class XragService:
             "reused": 0,
             "skipped": 0,
             "errors": 1,
+            "translation_errors": 1,
             "updated_documents": 0,
             "missing_source_files": 0,
             "chunks": 0,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,7 @@ from xrag.markdown_store import MarkdownStore
 from xrag.models import Post
 import xrag.service as service_module
 from xrag.service import XragService
-from xrag.translation import TranslationOutcome
+from xrag.translation import TranslationFailure, TranslationOutcome
 
 
 def configuration(root: Path) -> AppConfig:
@@ -66,6 +67,29 @@ class ReuseTranslation:
     def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
         self.calls.append((item, existing))
         return TranslationOutcome(item, 0, 1, 0, ())
+
+
+class UpdatingTranslation:
+    def preflight(self) -> None:
+        pass
+
+    def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+        return TranslationOutcome(replace(item, source_type="translated"), 1, 0, 0, ())
+
+
+class FailingTranslation:
+    def preflight(self) -> None:
+        pass
+
+    def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+        return TranslationOutcome(
+            item, 0, 0, 0, (TranslationFailure("post", "translation failed"),)
+        )
+
+
+class UnavailableTranslation:
+    def preflight(self) -> None:
+        raise RuntimeError("translation model secret source")
 
 
 def sibling_workdirs(stable: Path) -> list[Path]:
@@ -130,6 +154,7 @@ def test_translate_all_reuses_existing_posts_rebuilds_once_and_preserves_media(
         "reused": 1,
         "skipped": 0,
         "errors": 0,
+        "translation_errors": 0,
         "updated_documents": 0,
         "missing_source_files": 0,
         "chunks": 2,
@@ -141,6 +166,88 @@ def test_translate_all_reuses_existing_posts_rebuilds_once_and_preserves_media(
     last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
     assert last_run["operation"] == "translation-backfill"
     assert last_run["counts"] == result
+
+
+def test_translate_all_counts_translation_failures_separately(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=StagingStore, translation=FailingTranslation(),
+    )
+
+    result = service.translate_all()
+
+    assert result == {
+        "scanned": 1,
+        "translated": 0,
+        "reused": 0,
+        "skipped": 0,
+        "errors": 1,
+        "translation_errors": 1,
+        "updated_documents": 0,
+        "missing_source_files": 0,
+        "chunks": 2,
+    }
+
+
+def test_translate_all_preflight_failure_counts_translation_error(tmp_path: Path) -> None:
+    service = XragService(
+        configuration(tmp_path), object(), MarkdownStore(tmp_path / "data/markdown"), None,
+        rebuild_factory=StagingStore, translation=UnavailableTranslation(),
+    )
+
+    with pytest.raises(RuntimeError, match="translation unavailable"):
+        service.translate_all()
+
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run["counts"] == {
+        "scanned": 0,
+        "translated": 0,
+        "reused": 0,
+        "skipped": 0,
+        "errors": 1,
+        "translation_errors": 1,
+        "updated_documents": 0,
+        "missing_source_files": 0,
+        "chunks": 0,
+    }
+
+
+def test_translate_all_rebuild_exception_records_safe_backfill_result(
+    tmp_path: Path,
+) -> None:
+    stable = tmp_path / "data/chroma"
+    stable.mkdir(parents=True)
+    (stable / "old-sentinel").write_bytes(b"old")
+
+    class WrongCountStore(StagingStore):
+        def count(self) -> int:
+            return super().count() - 1
+
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=WrongCountStore, translation=UpdatingTranslation(),
+    )
+
+    result = service.translate_all()
+
+    assert result == {
+        "scanned": 1,
+        "translated": 1,
+        "reused": 0,
+        "skipped": 0,
+        "errors": 1,
+        "translation_errors": 0,
+        "updated_documents": 1,
+        "missing_source_files": 0,
+        "chunks": 0,
+    }
+    assert (stable / "old-sentinel").read_bytes() == b"old"
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run == {"operation": "translation-backfill", "time": last_run["time"], "counts": result}
 
 
 @pytest.mark.parametrize("failure", ["malformed", "index"])
