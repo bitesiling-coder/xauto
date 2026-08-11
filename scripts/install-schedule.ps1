@@ -467,6 +467,13 @@ $RunnerWindowsPath = Join-Path $ProjectRoot "scripts\run-daily.sh"
 if (-not (Test-Path -LiteralPath $RunnerWindowsPath -PathType Leaf)) {
     throw "Daily runner does not exist: $RunnerWindowsPath"
 }
+$WindowsRunnerPath = Join-Path $ProjectRoot "scripts\run-daily.ps1"
+if (-not (Test-Path -LiteralPath $WindowsRunnerPath -PathType Leaf)) {
+    throw "Windows daily launcher does not exist: $WindowsRunnerPath"
+}
+if ($WindowsRunnerPath -match '[\x00-\x1F\x7F"]') {
+    throw "The Windows daily launcher path contains an unsupported quote or control character."
+}
 
 $PointerPlan = @(Get-LinkedWorktreePointerPlan -ProjectRoot $ProjectRoot)
 $PendingPointerCount = @($PointerPlan | Where-Object { $_.NeedsUpdate }).Count
@@ -508,11 +515,11 @@ if ($WslRunnerPath -match '[\x00-\x1F\x7F"]') {
     throw "The translated WSL runner path contains an unsupported quote or control character."
 }
 
-$ActionArguments = '-d {0} -e bash "{1}"' -f $Distribution, $WslRunnerPath
+$ActionArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Distribution "{1}"' -f $WindowsRunnerPath, $Distribution
 
 if ($DryRun) {
     Write-Output "Dry run: would normalize $PendingPointerCount linked-worktree Git pointer file(s); no Git metadata was changed."
-    Write-Output "Dry run: task='$TaskName' time='$ScheduleTime' action=wsl.exe $ActionArguments"
+    Write-Output "Dry run: task='$TaskName' time='$ScheduleTime' action=powershell.exe $ActionArguments"
     return
 }
 
@@ -528,7 +535,7 @@ try {
         throw "Git pointer preparation did not produce stable portable metadata."
     }
 
-    $Action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument $ActionArguments
+    $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $ActionArguments
     $Trigger = New-ScheduledTaskTrigger -Daily -At $ScheduleTime
     $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
     $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name

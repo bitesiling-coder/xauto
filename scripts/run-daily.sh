@@ -4,6 +4,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
+NO_PUBLISH=false
+case "$#" in
+    0) ;;
+    1)
+        if [[ "$1" != "--no-publish" ]]; then
+            printf '%s\n' "ERROR: unsupported daily runner argument."
+            exit 64
+        fi
+        NO_PUBLISH=true
+        ;;
+    *)
+        printf '%s\n' "ERROR: unsupported daily runner argument."
+        exit 64
+        ;;
+esac
+
 export PATH="$HOME/.local/bin:$PATH"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -15,6 +31,15 @@ printf '\n=== X-RAG scheduled collection start: %s ===\n' "$(date --iso-8601=sec
 if ! command -v opencli >/dev/null 2>&1; then
     printf '%s\n' "ERROR: required command 'opencli' was not found in PATH."
     exit 127
+fi
+
+run_dashboard_update() {
+    "$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update --no-publish
+}
+
+if [[ "$NO_PUBLISH" == "true" ]]; then
+    run_dashboard_update
+    exit 0
 fi
 
 if ! command -v wslpath >/dev/null 2>&1; then
@@ -66,7 +91,7 @@ if [[ "${#PYTHON_FIELDS[@]}" -ne 3 \
     exit 127
 fi
 
-"$PROJECT_ROOT/.venv/bin/xrag" --root "$PROJECT_ROOT" dashboard update --no-publish
+run_dashboard_update
 
 WINDOWS_WRAPPER="$(wslpath -w "$PROJECT_ROOT/scripts/publish-dashboard.py")"
 if [[ "${#WINDOWS_WRAPPER}" -lt 4 \

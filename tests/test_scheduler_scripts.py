@@ -13,6 +13,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNNER = PROJECT_ROOT / "scripts" / "run-daily.sh"
+WINDOWS_RUNNER = PROJECT_ROOT / "scripts" / "run-daily.ps1"
 PUBLISH_WRAPPER = PROJECT_ROOT / "scripts" / "publish-dashboard.py"
 INSTALLER = PROJECT_ROOT / "scripts" / "install-schedule.ps1"
 INSTALLER_RELATIVE = ".\\scripts\\install-schedule.ps1"
@@ -79,6 +80,7 @@ def install_scheduler_scripts(project: Path) -> None:
     scripts.mkdir(exist_ok=True)
     shutil.copy2(INSTALLER, scripts / INSTALLER.name)
     shutil.copy2(RUNNER, scripts / RUNNER.name)
+    shutil.copy2(WINDOWS_RUNNER, scripts / WINDOWS_RUNNER.name)
 
 
 def create_normal_scheduler_repo(tmp_path: Path) -> Path:
@@ -415,6 +417,20 @@ def test_daily_runner_uses_fail_fast_dashboard_update_pipeline() -> None:
     assert 'collect --all' not in script
 
 
+def test_windows_daily_launcher_runs_wsl_update_then_native_publisher() -> None:
+    script = WINDOWS_RUNNER.read_text(encoding="utf-8")
+
+    assert "Set-StrictMode -Version Latest" in script
+    assert 'Join-Path $PSScriptRoot "run-daily.sh"' in script
+    assert 'Join-Path $PSScriptRoot "publish-dashboard.py"' in script
+    assert "& wsl.exe -d $Distribution -e bash $WslRunnerPath --no-publish" in script
+    assert "Get-Command python.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1" in script
+    assert "& $WindowsPython -I -S $PublisherWindowsPath" in script
+    assert "scheduler.log" in script
+    assert "translation install" not in script
+    assert "snapshot_download" not in script
+
+
 def test_readme_documents_local_media_and_resilient_collection() -> None:
     readme = PROJECT_ROOT.joinpath("README.md").read_text(encoding="utf-8")
 
@@ -489,8 +505,9 @@ def test_dry_run_uses_stubbed_wsl_translation_and_sanitized_quoted_action() -> N
     assert "Dry run" in result.stdout
     assert "X-RAG Daily Collection" in result.stdout
     assert "10:00" in result.stdout
-    assert "wsl.exe" in result.stdout
-    assert '-d Ubuntu -e bash "' + fake_wsl_runner + '"' in result.stdout
+    assert "powershell.exe" in result.stdout
+    assert '-NoProfile -ExecutionPolicy Bypass -File "' in result.stdout
+    assert '-Distribution "Ubuntu"' in result.stdout
     assert "ARGV_OK" in result.stdout
     assert "Register-ScheduledTask" not in result.stdout
 
@@ -525,7 +542,7 @@ def test_wsl_stderr_with_nonzero_exit_fails_with_context() -> None:
     assert "NativeCommandError" not in output
 
 
-def test_scheduled_action_uses_direct_exec_and_preserves_literal_path(tmp_path: Path) -> None:
+def test_scheduled_action_uses_native_launcher_and_preserves_literal_path(tmp_path: Path) -> None:
     project = create_normal_scheduler_repo(tmp_path)
     installer = project / "scripts" / INSTALLER.name
     command = (
@@ -533,8 +550,9 @@ def test_scheduled_action_uses_direct_exec_and_preserves_literal_path(tmp_path: 
         "[char]0x4E2D + [char]0x6587 + '/run-daily.sh'; "
         "function global:wsl.exe { $global:LASTEXITCODE = 0; $global:FakeWslRunner }; "
         "function global:New-ScheduledTaskAction { param($Execute, $Argument); "
-        "if ($Execute -cne 'wsl.exe') { throw 'wrong executable' }; "
-        "if ($Argument -cne ('-d Ubuntu -e bash \"' + $global:FakeWslRunner + '\"')) "
+        "$expectedLauncher = (Resolve-Path -LiteralPath '.\\scripts\\run-daily.ps1').Path; "
+        "if ($Execute -cne 'powershell.exe') { throw 'wrong executable' }; "
+        "if ($Argument -cne ('-NoProfile -ExecutionPolicy Bypass -File \"' + $expectedLauncher + '\" -Distribution \"Ubuntu\"')) "
         "{ throw ('wrong action: ' + $Argument) }; "
         "$global:ActionOk = $true; [pscustomobject]@{} }; "
         "function global:New-ScheduledTaskTrigger { param([switch]$Daily, $At); [pscustomobject]@{} }; "
