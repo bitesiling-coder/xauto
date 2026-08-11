@@ -709,13 +709,10 @@ class TransformersTranslationEngine:
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
         installed = verify_translation_model(self._model_root)
-        fingerprint = _model_fingerprint(installed)
         if self._installed != installed:
             self._tokenizer = None
             self._model = None
-        self._installed = installed
-        self._fingerprint = fingerprint
-        path = str(self._installed.snapshot_path)
+        path = str(installed.snapshot_path)
         tokenizer = AutoTokenizer.from_pretrained(
             path, local_files_only=True, trust_remote_code=False
         )
@@ -724,6 +721,9 @@ class TransformersTranslationEngine:
         )
         model.to("cpu")
         model.eval()
+        fingerprint = _model_fingerprint(installed)
+        self._installed = installed
+        self._fingerprint = fingerprint
         self._tokenizer = tokenizer
         self._model = model
 

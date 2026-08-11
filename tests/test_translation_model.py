@@ -1019,6 +1019,7 @@ def _install_fake_runtime(
     *,
     decoded: object = None,
     load_error: Exception | None = None,
+    on_model_load: Callable[[], None] | None = None,
 ) -> SimpleNamespace:
     state = SimpleNamespace(
         tokenizer_loads=[],
@@ -1050,6 +1051,8 @@ def _install_fake_runtime(
         @classmethod
         def from_pretrained(cls, path: str, **kwargs: object) -> object:
             state.model_loads.append((path, kwargs))
+            if on_model_load is not None:
+                on_model_load()
             return cls()
 
         def to(self, device: str) -> None:
@@ -1255,12 +1258,24 @@ def test_engine_loaded_model_uses_memory_when_disk_metadata_appears_unchanged(
     import xrag.translation_model as module
 
     _write_snapshot(tmp_path, files={"config.json": b"good"})
-    state = _install_fake_runtime(monkeypatch, decoded=["memory result"])
+    config = tmp_path / "snapshots" / REVISION_A / "config.json"
+    snapshot = config.parent
+
+    def touch_loaded_metadata() -> None:
+        metadata = config.stat()
+        os.utime(
+            config,
+            ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000_000),
+        )
+
+    state = _install_fake_runtime(
+        monkeypatch,
+        decoded=["memory result"],
+        on_model_load=touch_loaded_metadata,
+    )
     engine = TransformersTranslationEngine(tmp_path)
     assert engine.translate_many(["first"]) == ["memory result"]
 
-    config = tmp_path / "snapshots" / REVISION_A / "config.json"
-    snapshot = config.parent
     original = config.stat()
     original_snapshot = snapshot.stat()
     config.write_bytes(b"evil")
