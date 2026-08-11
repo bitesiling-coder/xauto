@@ -828,8 +828,16 @@ def test_daily_runner_never_downloads_or_upgrades_translation_model() -> None:
     script = RUNNER.read_text(encoding="utf-8")
 
     assert script.count("dashboard update --no-publish") == 1
-    assert "translation install" not in script
-    assert "snapshot_download" not in script
+    for forbidden in (
+        "translation install",
+        "snapshot_download",
+        "pip install",
+        "pip upgrade",
+        "huggingface-cli download",
+        "model install",
+        "model upgrade",
+    ):
+        assert forbidden not in script
     assert "HF_HUB_OFFLINE=1" in script
     assert "TRANSFORMERS_OFFLINE=1" in script
 
@@ -1236,3 +1244,9 @@ def test_readme_documents_hybrid_scheduler_runtime() -> None:
     assert "SHA-256" in readme
     assert "Hugging Face" in readme
     assert "translation-errors" in readme
+    assert "install the translation model before enabling the schedule" in readme
+    assert "Daily translation is local-only" in readme
+    assert "automatic model upgrade or deletion" in readme
+    assert "verification or publication failure keeps the live snapshot" in readme
+    assert "Installation temporary files may remain for audit" in readme
+    assert "does not delete source Markdown, media, or other computer files" in readme

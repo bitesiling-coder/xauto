@@ -97,6 +97,8 @@ Markdown 的 `text_zh`/`translation_zh` 是本地权威存档的一部分。翻�
 
 离线可用性依赖已安装且已校验的 `data/models/translation/`，因此备份权威 Markdown/媒体时也建议备份该目录；恢复到新机器后，如未携带完整模型快照，应先重新运行 `translation install`，再执行收集或补译。
 
+**Operational guarantees:** install the translation model before enabling the schedule. Daily translation is local-only and never retrieves a newer model. There is no automatic model upgrade or deletion. A verification or publication failure keeps the live snapshot. Installation temporary files may remain for audit after a failure. The translation workflow does not delete source Markdown, media, or other computer files.
+
 ## 本地媒体与 Markdown
 
 每条推文仍以 `data/markdown/<推文ID>.md` 作为权威文档；允许下载的 X 图片保存在 `data/media/<推文ID>/`。Markdown 会显示完整正文、本地图片、引用推文和原始 X 链接，因此可以直接预览，也可以继续供 RAG 重建和检索。
