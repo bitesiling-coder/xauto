@@ -1,45 +1,45 @@
 {
   "version": 1,
-  "generated_at": "2026-08-11T11:49:52.623938+08:00",
+  "generated_at": "2026-08-11T10:59:21.273626+08:00",
   "timezone": "Asia/Singapore",
   "fallback_used": false,
   "summary": {
     "posts": 12,
     "authors": 10,
-    "media": 18,
-    "engagement": 434253
+    "media": 14,
+    "engagement": 384279
   },
   "topics": [
     {
       "id": "ai-agents-security",
       "label": "AI Agents 与 Agent Security",
       "family": "AI",
-      "posts": 0,
-      "score": 0,
-      "top_keyword": ""
+      "posts": 2,
+      "score": 0.663542,
+      "top_keyword": "Autonomous AI Agents"
     },
     {
       "id": "world-models-embodied-ai",
       "label": "World Models 与 Embodied AI",
       "family": "AI",
       "posts": 1,
-      "score": 0.760016,
+      "score": 0.775392,
       "top_keyword": "World Models"
     },
     {
       "id": "rwa-stablecoin-payments",
       "label": "RWA 与 Stablecoin Payments",
       "family": "Web3",
-      "posts": 2,
-      "score": 0.746821,
+      "posts": 3,
+      "score": 0.718826,
       "top_keyword": "Tokenized Stocks"
     },
     {
       "id": "prediction-markets-regulation",
       "label": "Prediction Markets 与 Crypto Regulation",
       "family": "Web3",
-      "posts": 9,
-      "score": 0.87978,
+      "posts": 6,
+      "score": 0.891267,
       "top_keyword": "Prediction Markets"
     }
   ],
@@ -50,14 +50,14 @@
       "text": "LATEST: 🇺🇸 Senator Jim Risch confirmed the Senate will begin the process of passing the CLARITY Act on Sept. 15, warning \"the stakes couldn't be higher.\" https://t.co/n5nsyP3coh",
       "created_at": "2026-08-10T18:17:12+00:00",
       "url": "https://x.com/i/status/2086879551980749249",
-      "likes": 665,
-      "views": 93443,
+      "likes": 647,
+      "views": 90759,
       "topic": "prediction-markets-regulation",
       "family": "Web3",
       "keywords": [
         "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
       ],
-      "score": 0.938513,
+      "score": 0.9447,
       "fallback": false,
       "media": [
         {
@@ -69,29 +69,6 @@
           "url": "assets/media/cfe3fb54bd91f09129a083170d7e0f991a1efda090d07c98e90cbd4e17cc39b1.jpg",
           "type": "image",
           "alt": "LATEST: 🇺🇸 Senator Jim Risch confirmed the Senate will begin the process of passing the CLARITY Act on Sept. 15, warning \"the stakes couldn't be higher.\" https:"
-        }
-      ]
-    },
-    {
-      "id": "2086957412146348459",
-      "author": "AltcoinDaily",
-      "text": "A HURRICANE is about To Hit Crypto... 🌪️\n\n0:37 - Clarity Act UPDATE\n2:20 - BlackRock News\n5:29 - $LINK to $200\n6:15 - Morgan Stanely &amp; $ETH\n7:04 - What's NEXT?\n\nWATCH 👇 https://t.co/xruEruY4WS",
-      "created_at": "2026-08-10T23:26:35+00:00",
-      "url": "https://x.com/i/status/2086957412146348459",
-      "likes": 210,
-      "views": 28193,
-      "topic": "prediction-markets-regulation",
-      "family": "Web3",
-      "keywords": [
-        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
-      ],
-      "score": 0.919092,
-      "fallback": false,
-      "media": [
-        {
-          "url": "assets/media/157d515a15ea61038fb88e30be0690632151184a9be6dab3765ca7a65a1fdbd3.jpg",
-          "type": "video_poster",
-          "alt": "A HURRICANE is about To Hit Crypto... 🌪️\n\n0:37 - Clarity Act UPDATE\n2:20 - BlackRock News\n5:29 - $LINK to $200\n6:15 - Morgan Stanely &amp; $ETH\n7:04 - What's NE"
         }
       ]
     },
@@ -108,7 +85,7 @@
       "keywords": [
         "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
       ],
-      "score": 0.915958,
+      "score": 0.923201,
       "fallback": false,
       "media": [
         {
@@ -120,34 +97,6 @@
           "url": "assets/media/41f9b0e449c9c3c4586c25610ffd8cab063c93b35ab3f4811b2fc9d1e6c58aec.jpg",
           "type": "image",
           "alt": "LATEST: 📊 Grayscale says crypto can move forward without the CLARITY Act, but warns failure to pass it risks pushing new investment overseas. https://t.co/5rncm"
-        }
-      ]
-    },
-    {
-      "id": "2087016382655324464",
-      "author": "Cointelegraph",
-      "text": "🗞️ Need to catch up on the news? Here's our top 10 from today:\n\n🔸 White House crypto advisor Patrick Witt says, “The administration remains fully committed to getting the Clarity Act across the finish line in September.”\n\n🔹 Trump Media said more than 10 customers, mostly high-frequency trading firms, have signed up for its real-time Truth Social data feed, per WSJ.\n\n🔸 Europe released a set of standardized icons that platforms can use to label AI-generated or manipulated content under the EU AI Act's transparency rules.\n\n🔹 Anthropic struck a $9.1 billion cloud deal with Bitcoin miner Riot Platforms, per Bloomberg.\n\n🔸 The SEC will hold an open meeting on Friday to consider proposing new rules for a tailored offering regime covering crypto investment contracts.\n\n🔹 TRUMP: “The only one that has control of the Strait of Hormuz right now is the United States Navy... We control the Strait 100%.\"\n\n🔸 Trump Media disclosed it holds 14,139 $BTC worth roughly $900 million after adding 4,662 BTC in July.\n\n🔹 BlackRock CEO Larry Fink says AI will require more than 70 gigawatts of power.\n\n🔸 Sui introduced Tessera, a KYC-gated B2B settlement network using confidential stablecoin transfers to keep payment amounts private.\n\n🔹 Wall Street giants partner with Nvidia on a $500 billion AI financing deal, according to the Financial Times.",
-      "created_at": "2026-08-11T03:20:55+00:00",
-      "url": "https://x.com/i/status/2087016382655324464",
-      "likes": 67,
-      "views": 18632,
-      "topic": "prediction-markets-regulation",
-      "family": "Web3",
-      "keywords": [
-        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
-      ],
-      "score": 0.910027,
-      "fallback": false,
-      "media": [
-        {
-          "url": "assets/media/2baabdf3c6bbbaa91488c408857317ba6ae2e12350839c5327f658cd2b4c18d7.jpg",
-          "type": "image",
-          "alt": "🗞️ Need to catch up on the news? Here's our top 10 from today:\n\n🔸 White House crypto advisor Patrick Witt says, “The administration remains fully committed to g"
-        },
-        {
-          "url": "assets/media/bee94ed14f17825a0ece754d1eaaab9278f3098fee2d849e668d0aea20245af4.jpg",
-          "type": "image",
-          "alt": "🗞️ Need to catch up on the news? Here's our top 10 from today:\n\n🔸 White House crypto advisor Patrick Witt says, “The administration remains fully committed to g"
         }
       ]
     },
@@ -164,7 +113,7 @@
       "keywords": [
         "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
       ],
-      "score": 0.908699,
+      "score": 0.915929,
       "fallback": false,
       "media": [
         {
@@ -192,7 +141,7 @@
       "keywords": [
         "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
       ],
-      "score": 0.895747,
+      "score": 0.902663,
       "fallback": false,
       "media": [
         {
@@ -215,7 +164,7 @@
       "keywords": [
         "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
       ],
-      "score": 0.885958,
+      "score": 0.893031,
       "fallback": false,
       "media": [
         {
@@ -241,14 +190,14 @@
       "text": "如果要选一个近期最让我感兴趣的 Launchpad 项目，#STONK 一定值得放进名单。@LaunchOnSF\n\n6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx\n\nSTONK 真正有意思的地方，并不是又做了一个普通的 Meme Launchpad，而是它正在尝试把 Meme 文化、代币交易以及现实资产代币化结合起来。\n\n这种玩法让 STONK 不再只是一个单纯的代币，而是成为连接 Meme、交易和 RWA 叙事的重要组成部分。更值得关注的是平台本身的经济循环。随着交易活动增加，平台能够产生手续费，并通过代币销毁和代币化资产奖励进一步增强生态吸引力。\n\n交易越活跃，生态产生的价值越多；用户获得更多参与理由，反过来又能够推动更多交易活动。这种正向循环，正是 STONK 与传统 Launchpad 最大的区别之一。我尤其看好它的配对交易概念。\n\n相比单纯使用 SOL 或 USDC 进行交易，将 Meme 与具有文化关联的股票或现实资产进行配对，本身就能够创造新的叙事，也让每个交易对拥有更加独特的故事。\n\n随着 RWA 和代币化股票逐渐成为链上市场的重要方向，Solana 本身也拥有成熟的流动性、用户基础和基础设施。而 STONK 恰好站在 Meme、交易与 RWA 的交汇点上，这让它拥有了非常独特的发展空间。\n\n更重要的是，持有 STONK 的用户不仅仅是在等待价格上涨，还能够通过生态机制获得更多实际参与的理由。对于我来说，STONK 最吸引人的地方就是它没有简单复制已有模式，而是在尝试创造一种更加有趣、更具想象力的链上交易体验。\n\n项目还处于早期，但这个方向确实非常值得关注。如果后续生态活跃度持续提升，STONK 或许有机会成为连接 Meme 与 RWA 的一个重要入口。STON 的故事，可能才刚刚开始。",
       "created_at": "2026-08-11T02:49:36+00:00",
       "url": "https://x.com/i/status/2087008502329803189",
-      "likes": 75,
-      "views": 5817,
+      "likes": 45,
+      "views": 5719,
       "topic": "rwa-stablecoin-payments",
       "family": "Web3",
       "keywords": [
         "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
       ],
-      "score": 0.793798,
+      "score": 0.778286,
       "fallback": false,
       "media": [
         {
@@ -264,19 +213,36 @@
       ]
     },
     {
+      "id": "2086955377250152800",
+      "author": "mkratsios47",
+      "text": "Open-weight models put American AI innovation directly into the hands of developers, researchers, and startups. This is exactly the kind of leadership @POTUS's AI Action Plan calls for, and we're excited to see labs across the U.S. ecosystem continuing to invest in open, accessible AI.",
+      "created_at": "2026-08-10T23:18:30+00:00",
+      "url": "https://x.com/i/status/2086955377250152800",
+      "likes": 675,
+      "views": 73074,
+      "topic": "world-models-embodied-ai",
+      "family": "AI",
+      "keywords": [
+        "\"World Models\" OR 世界模型 OR \"Open-weight Models\" OR AGI OR \"Intelligence Explosion\" OR \"Embodied AI\" OR 具身智能 OR \"Humanoid Robots\""
+      ],
+      "score": 0.775392,
+      "fallback": false,
+      "media": []
+    },
+    {
       "id": "2086964049682514093",
       "author": "polysuccubus",
       "text": "THIS FRESH POLYMARKET ACCOUNT CAUGHT MY ATTENTION\n\ntrader named Camelcc created his account on August 1\nthen he open $24.7k YES position on one very specific market:\n\n“Clarity Act H.R.3633 signed into law in 2026?”\n\nhis average entry was just 19.4¢\n\nthe position is now worth around $30.3k, already sitting at roughly +26.5%\n\nbut the interesting is not the profit.\nit is the timing and the market he chose.\n\nThe CLARITY Act is one of the biggest pieces of crypto legislation moving through Washington right now.\n\nit is designed to create a federal market structure for digital assets and clarify how crypto is regulated between agencies like the SEC and CFTC. \nAn updated Senate version was released in July, and the Senate has now advanced the legislation toward another vote after the August recess.\n\nPolymarket still gives it only around a 25% chance of becoming law before the end of 2026.\n\nCamelcc got his average around 19.4%\n\nif his thesis is right and he holds roughly the same amount of shares until YES resolves, the payout profile becomes much bigger than the current +26%.\n\nthat is why i am watching this wallet now.\n\nwith predict parity you can bookmark a trader directly from the terminal and track what happens next.\n\nif he adds more CLARITY Act exposure, starts selling, or moves into another political market, you can follow the wallet instead of discovering the move after everyone else.\n\nyou can also trade the same polymarket markets without leaving the terminal.\n\nfor me this is the real advantage edge of using prediction market terminals.",
       "created_at": "2026-08-10T23:52:58+00:00",
       "url": "https://x.com/i/status/2086964049682514093",
-      "likes": 22,
-      "views": 456,
+      "likes": 15,
+      "views": 274,
       "topic": "prediction-markets-regulation",
       "family": "Web3",
       "keywords": [
         "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
       ],
-      "score": 0.781093,
+      "score": 0.768076,
       "fallback": false,
       "media": [
         {
@@ -292,59 +258,70 @@
       ]
     },
     {
-      "id": "2087015275954950381",
-      "author": "calebandbrown",
-      "text": "This Week in Crypto News! \n\n→ Bitcoin and Ethereum edge higher as crypto ETF inflows return\n\n→ BlackRock tokenises shares in six European money market funds on Ethereum\n\n→ U.S. Senate sets up a September procedural vote on the CLARITY Act\n\n→ Tokenised real-world asset deposits surge to US$7.4B\n\n→ Visa expands stablecoin-powered cross-border payments\n\nRead all about this and more in the Caleb & Brown Weekly Rollup newsletter!",
-      "created_at": "2026-08-11T03:16:31+00:00",
-      "url": "https://x.com/i/status/2087015275954950381",
-      "likes": 3,
-      "views": 414,
-      "topic": "prediction-markets-regulation",
-      "family": "Web3",
-      "keywords": [
-        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
-      ],
-      "score": 0.762932,
-      "fallback": false,
-      "media": [
-        {
-          "url": "assets/media/c5ac916821ed5a214e83513f546e01436a7cbb90d7480c95415afab69d26eaa8.jpg",
-          "type": "video_poster",
-          "alt": "This Week in Crypto News! \n\n→ Bitcoin and Ethereum edge higher as crypto ETF inflows return\n\n→ BlackRock tokenises shares in six European money market funds on "
-        }
-      ]
-    },
-    {
-      "id": "2086955377250152800",
-      "author": "mkratsios47",
-      "text": "Open-weight models put American AI innovation directly into the hands of developers, researchers, and startups. This is exactly the kind of leadership @POTUS's AI Action Plan calls for, and we're excited to see labs across the U.S. ecosystem continuing to invest in open, accessible AI.",
-      "created_at": "2026-08-10T23:18:30+00:00",
-      "url": "https://x.com/i/status/2086955377250152800",
-      "likes": 725,
-      "views": 78572,
-      "topic": "world-models-embodied-ai",
-      "family": "AI",
-      "keywords": [
-        "\"World Models\" OR 世界模型 OR \"Open-weight Models\" OR AGI OR \"Intelligence Explosion\" OR \"Embodied AI\" OR 具身智能 OR \"Humanoid Robots\""
-      ],
-      "score": 0.760016,
-      "fallback": false,
-      "media": []
-    },
-    {
       "id": "2086911681460842593",
       "author": "real_dr_pump",
       "text": "随着今天 $MANLET（$ANSEM 底池）的启动，一个全新的飞轮正在 Solana 上演。\n\n@LaunchOnSF 成为这一轮底池战争中 Solana 唯一的赢家\n\n目前的几个龙头\n1️⃣ 币股方面龙头有和 $TTWO 配对的 $GTA6 (R星的母公司)\n2️⃣ Pre-ipo 方面有和 Anthropic 配对的 solana:7ssJZGFT3twGqeYA1kvpoMWwZYvMZvrMEbjRaWgg46BL \n3️⃣ Meme 方面有和 $ANSEM 配对的 $MANLET \n\n而这一切的价值又会回流到 $STONK 以及平台上的顶级代币（手续费会用来回购并销毁平台市值排名前十的代币）",
       "created_at": "2026-08-10T20:24:52+00:00",
       "url": "https://x.com/i/status/2086911681460842593",
-      "likes": 21,
-      "views": 6485,
+      "likes": 18,
+      "views": 5764,
       "topic": "rwa-stablecoin-payments",
       "family": "Web3",
       "keywords": [
         "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
       ],
-      "score": 0.699845,
+      "score": 0.689391,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2086861382692282445",
+      "author": "yo_itsmatt",
+      "text": "Collectibles\nMemes\nRWAs\nPre-IPOs\nSpot trading\nTokenized equities\nMoney markets\nLaunchpads\nAgent Commerce\nStablecoin payments\nLiquid staking\nPrediction Markets\nPrivate credit\nPerpetuals \nPrivacy \n\nOnly one chain has meanginful market share in all these categories \n\nSolana",
+      "created_at": "2026-08-10T17:05:00+00:00",
+      "url": "https://x.com/i/status/2086861382692282445",
+      "likes": 71,
+      "views": 3987,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.688801,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2086846966277792164",
+      "author": "cdiersing",
+      "text": "Greg Casar leads dozens of House Democrats demanding OpenAI and Anthropic release the logs, answer questions about their models hacking into other companies. \n\n@courtneyrozen scoops: \n\nhttps://t.co/ULsLynL0wR",
+      "created_at": "2026-08-10T16:07:43+00:00",
+      "url": "https://x.com/i/status/2086846966277792164",
+      "likes": 22,
+      "views": 1411,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.668003,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2086847499952656688",
+      "author": "mikedarner",
+      "text": ".@USProgressives Chair @RepCasar leads letter with dozens of House Democrats pressing Anthropic, OpenAI about rogue AI agents  https://t.co/XRv1so1kIz",
+      "created_at": "2026-08-10T16:09:50+00:00",
+      "url": "https://x.com/i/status/2086847499952656688",
+      "likes": 15,
+      "views": 1330,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.659081,
       "fallback": false,
       "media": []
     }
