@@ -389,12 +389,13 @@ class XragService:
 
             after_files = self._source_manifest()
             missing = set(before_files) - set(after_files)
+            unexpected = set(after_files) - set(before_files)
             changed_files = any(
                 after_files.get(path)
                 != allowed_markdown_hashes.get(path, digest)
                 for path, digest in before_files.items()
             )
-            if missing or changed_files:
+            if missing or unexpected or changed_files:
                 counts["missing_source_files"] = len(missing)
                 counts["errors"] += 1
                 self._log_error(

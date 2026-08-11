@@ -321,6 +321,35 @@ def test_translate_all_rejects_unexpected_media_byte_change(tmp_path: Path) -> N
         service.translate_all()
 
 
+def test_translate_all_rejects_unexpected_regular_media_path(tmp_path: Path) -> None:
+    markdown = MarkdownStore(tmp_path / "data/markdown")
+    add_post(markdown, "a")
+    media = tmp_path / "data/media"
+
+    class CreatingMediaTranslation:
+        def preflight(self) -> None:
+            pass
+
+        def enrich(self, item: Post, existing: Post | None) -> TranslationOutcome:
+            media.mkdir(parents=True, exist_ok=True)
+            (media / "unexpected.jpg").write_bytes(b"new media")
+            return TranslationOutcome(item, 0, 1, 0, ())
+
+    service = XragService(
+        configuration(tmp_path), object(), markdown, None,
+        rebuild_factory=StagingStore, translation=CreatingMediaTranslation(),
+    )
+
+    with pytest.raises(RuntimeError, match="^translation backfill removed source data$"):
+        service.translate_all()
+
+    assert (media / "unexpected.jpg").read_bytes() == b"new media"
+    last_run = json.loads((tmp_path / "logs/last-run.json").read_text(encoding="utf-8"))
+    assert last_run["operation"] == "translation-backfill"
+    errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    assert '"source":"source-data"' in errors
+
+
 @pytest.mark.parametrize("failure", ["malformed", "index"])
 def test_document_failure_preserves_old_and_cleans_staging(
     tmp_path: Path, failure: str
