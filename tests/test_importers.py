@@ -28,6 +28,14 @@ def translation_mapping(text: str, **changes: object) -> dict[str, object]:
     return values
 
 
+def assert_invalid_import(path: Path) -> ValueError:
+    with pytest.raises(ValueError) as error:
+        load_posts(path)
+    assert str(error.value) == f"Invalid import data in {path}"
+    assert error.value.__cause__ is None
+    return error.value
+
+
 def test_load_posts_imports_yaml_and_json_lists(tmp_path: Path) -> None:
     yaml_path = tmp_path / "posts.yaml"
     json_path = tmp_path / "posts.json"
@@ -145,10 +153,8 @@ def test_load_posts_rejects_invalid_translation_pairs(
     path = tmp_path / "invalid.json"
     path.write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
 
-    with pytest.raises(ValueError) as error:
-        load_posts(path)
-
-    assert str(path) in str(error.value)
+    error = assert_invalid_import(path)
+    assert "SENSITIVE" not in str(error)
 
 
 @pytest.mark.parametrize("suffix", [".yaml", ".json"])
@@ -176,11 +182,8 @@ def test_load_posts_wraps_bilingual_metadata_errors_without_leaking_payload(
         path.write_text(yaml.safe_dump(row, allow_unicode=True), encoding="utf-8")
     before = path.read_bytes()
 
-    with pytest.raises(ValueError) as error:
-        load_posts(path)
-
-    assert str(path) in str(error.value)
-    assert sensitive not in str(error.value)
+    error = assert_invalid_import(path)
+    assert sensitive not in str(error)
     assert path.read_bytes() == before
     assert list(tmp_path.glob("*.md")) == []
 
@@ -199,14 +202,63 @@ def test_load_posts_wraps_markdown_body_errors_without_leaking_payload(
     before = path.read_bytes()
     before_names = sorted(item.name for item in tmp_path.iterdir())
 
+    error = assert_invalid_import(path)
+    assert sensitive not in str(error)
+    assert path.read_bytes() == before
+    assert sorted(item.name for item in tmp_path.iterdir()) == before_names
+
+
+@pytest.mark.parametrize(
+    "filename, content",
+    [
+        ("invalid.yaml", "post: [SENSITIVE_YAML_SYNTAX\n"),
+        (
+            "invalid.md",
+            "---\npost: [SENSITIVE_MARKDOWN_FRONTMATTER\n---\nbody\n",
+        ),
+    ],
+)
+def test_load_posts_sanitizes_yaml_parser_errors(
+    tmp_path: Path, filename: str, content: str
+) -> None:
+    path = tmp_path / filename
+    path.write_text(content, encoding="utf-8")
+
     with pytest.raises(ValueError) as error:
         load_posts(path)
 
-    assert str(path) in str(error.value)
-    assert "Invalid Markdown body" in str(error.value)
-    assert sensitive not in str(error.value)
-    assert path.read_bytes() == before
-    assert sorted(item.name for item in tmp_path.iterdir()) == before_names
+    assert str(error.value) == f"Invalid import data in {path}"
+    assert "SENSITIVE" not in str(error.value)
+    assert "while parsing" not in str(error.value)
+    assert error.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "filename, content",
+    [
+        ("scalar.yaml", "SENSITIVE_SCALAR_ROOT\n"),
+        (
+            "rows.json",
+            '[{"id":"valid","text":"valid"},"SENSITIVE_NONMAPPING_ROW"]',
+        ),
+        (
+            "unsafe.json",
+            '{"id":"../SENSITIVE_UNSAFE_ID","text":"valid"}',
+        ),
+    ],
+)
+def test_load_posts_sanitizes_shape_and_identifier_errors(
+    tmp_path: Path, filename: str, content: str
+) -> None:
+    path = tmp_path / filename
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError) as error:
+        load_posts(path)
+
+    assert str(error.value) == f"Invalid import data in {path}"
+    assert "SENSITIVE" not in str(error.value)
+    assert error.value.__cause__ is None
 
 
 @pytest.mark.parametrize("suffix, content", [
@@ -281,10 +333,8 @@ def test_load_posts_rejects_unsupported_invalid_roots_and_rows(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="Unsupported"):
         load_posts(unsupported)
-    with pytest.raises(ValueError, match="mapping or list"):
-        load_posts(invalid_root)
-    with pytest.raises(ValueError, match="text"):
-        load_posts(invalid_row)
+    assert_invalid_import(invalid_root)
+    assert_invalid_import(invalid_row)
 
 
 def test_load_posts_normalizes_scalars_numbers_and_dates(tmp_path: Path) -> None:
@@ -329,8 +379,7 @@ def test_load_posts_rejects_malformed_markdown_or_missing_text(tmp_path: Path, c
     path = tmp_path / "post.md"
     path.write_text(content, encoding="utf-8")
 
-    with pytest.raises(ValueError):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 def test_markdown_uses_a_safe_stem_only_when_id_is_missing(tmp_path: Path) -> None:
@@ -343,8 +392,7 @@ def test_markdown_uses_a_safe_stem_only_when_id_is_missing(tmp_path: Path) -> No
 
     assert load_posts(fallback)[0].id == "safe-id"
     assert load_posts(explicit)[0].id == "explicit-id"
-    with pytest.raises(ValueError, match="id"):
-        load_posts(unsafe)
+    assert_invalid_import(unsafe)
 
 
 @pytest.mark.parametrize("post_id", ["null", "''", "'   '"])
@@ -354,33 +402,30 @@ def test_markdown_does_not_use_stem_when_invalid_id_is_explicit(
     path = tmp_path / "safe-stem.md"
     path.write_text(f"---\nid: {post_id}\n---\nbody\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="id"):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 @pytest.mark.parametrize(
-    "content, match",
+    "content",
     [
-        ("---\nid: post\ntext: ignored\n", "closing delimiter"),
-        ("---\n- not\n- mapping\n---\nbody\n", "expected a mapping"),
+        "---\nid: post\ntext: ignored\n",
+        "---\n- not\n- mapping\n---\nbody\n",
     ],
 )
 def test_load_posts_rejects_invalid_markdown_front_matter(
-    tmp_path: Path, content: str, match: str
+    tmp_path: Path, content: str
 ) -> None:
     path = tmp_path / "post.md"
     path.write_text(content, encoding="utf-8")
 
-    with pytest.raises(ValueError, match=match):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 def test_load_posts_rejects_a_non_mapping_list_row(tmp_path: Path) -> None:
     path = tmp_path / "posts.yaml"
     path.write_text("- id: valid\n  text: valid\n- invalid\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="mapping"):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 @pytest.mark.parametrize("post_id", ["", "   ", True, 1.5])
@@ -388,8 +433,7 @@ def test_load_posts_rejects_invalid_post_ids(tmp_path: Path, post_id: object) ->
     path = tmp_path / "post.yaml"
     path.write_text(yaml.safe_dump({"id": post_id, "text": "valid"}), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="id"):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 def test_load_posts_accepts_integer_id_and_author_bio_alias(tmp_path: Path) -> None:
@@ -447,8 +491,7 @@ def test_load_posts_rejects_an_unsafe_id_in_a_batch_before_returning_posts(tmp_p
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="unsafe post ID"):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 def test_load_posts_rejects_casefold_duplicate_ids_in_a_batch(tmp_path: Path) -> None:
@@ -458,8 +501,7 @@ def test_load_posts_rejects_casefold_duplicate_ids_in_a_batch(tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="case-insensitive collision"):
-        load_posts(path)
+    assert_invalid_import(path)
 
 
 def test_load_posts_wraps_recursion_errors_from_deep_yaml(tmp_path: Path) -> None:
@@ -467,10 +509,7 @@ def test_load_posts_wraps_recursion_errors_from_deep_yaml(tmp_path: Path) -> Non
     path = tmp_path / "deep.yaml"
     path.write_text("value: " + "[" * depth + "value" + "]" * depth, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Cannot load YAML file") as error:
-        load_posts(path)
-
-    assert isinstance(error.value.__cause__, RecursionError)
+    assert_invalid_import(path)
 
 
 def test_load_posts_wraps_recursion_errors_from_deep_json(tmp_path: Path) -> None:
@@ -478,10 +517,7 @@ def test_load_posts_wraps_recursion_errors_from_deep_json(tmp_path: Path) -> Non
     path = tmp_path / "deep.json"
     path.write_text("[" * depth + '"value"' + "]" * depth, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Cannot load JSON file.*deep.json") as error:
-        load_posts(path)
-
-    assert isinstance(error.value.__cause__, RecursionError)
+    assert_invalid_import(path)
 
 
 def test_load_posts_wraps_recursion_errors_from_deep_markdown_front_matter(tmp_path: Path) -> None:
@@ -492,7 +528,4 @@ def test_load_posts_wraps_recursion_errors_from_deep_markdown_front_matter(tmp_p
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Invalid Markdown front matter.*deep.md") as error:
-        load_posts(path)
-
-    assert isinstance(error.value.__cause__, RecursionError)
+    assert_invalid_import(path)

@@ -27,45 +27,50 @@ def load_posts(path: Path) -> list[Post]:
     """Load and normalize posts from one YAML, JSON, or Markdown file."""
     path = Path(path)
     suffix = path.suffix.lower()
-    if suffix in {".yaml", ".yml"}:
-        rows = _load_yaml(path)
-    elif suffix == ".json":
-        rows = _load_json(path)
-    elif suffix == ".md":
-        rows = [_load_markdown(path)]
-    else:
+    if suffix not in {".yaml", ".yml", ".json", ".md"}:
         raise ValueError(f"Unsupported import file type: {path.suffix or '(no extension)'}")
-
-    normalized_rows = _rows(rows)
     try:
+        if suffix in {".yaml", ".yml"}:
+            rows = _load_yaml(path)
+        elif suffix == ".json":
+            rows = _load_json(path)
+        else:
+            rows = [_load_markdown(path)]
+
+        normalized_rows = _rows(rows)
         posts = [_normalize_row(row) for row in normalized_rows]
-    except (TypeError, ValueError) as error:
-        raise ValueError(
-            f"Invalid imported post id/text/bilingual metadata in {path}"
-        ) from error
-    _validate_post_ids(posts)
-    return posts
+        _validate_post_ids(posts)
+        return posts
+    except (
+        OSError,
+        RecursionError,
+        TypeError,
+        ValueError,
+        yaml.YAMLError,
+        json.JSONDecodeError,
+    ):
+        raise ValueError(f"Invalid import data in {path}") from None
 
 
 def _load_yaml(path: Path) -> object:
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, RecursionError, yaml.YAMLError) as error:
-        raise ValueError(f"Cannot load YAML file {path}: {error}") from error
+    except (OSError, RecursionError, yaml.YAMLError):
+        raise ValueError(f"Cannot load YAML file {path}") from None
 
 
 def _load_json(path: Path) -> object:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, RecursionError, json.JSONDecodeError) as error:
-        raise ValueError(f"Cannot load JSON file {path}: {error}") from error
+    except (OSError, RecursionError, json.JSONDecodeError):
+        raise ValueError(f"Cannot load JSON file {path}") from None
 
 
 def _load_markdown(path: Path) -> dict[str, object]:
     try:
         content = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ValueError(f"Cannot read Markdown file {path}: {error}") from error
+    except OSError:
+        raise ValueError(f"Cannot read Markdown file {path}") from None
     if not content.startswith("---\n"):
         raise ValueError(f"Invalid Markdown front matter in {path}: missing opening delimiter")
     end = content.find("\n---\n", 4)
@@ -73,8 +78,8 @@ def _load_markdown(path: Path) -> dict[str, object]:
         raise ValueError(f"Invalid Markdown front matter in {path}: missing closing delimiter")
     try:
         metadata = yaml.safe_load(content[4:end])
-    except (RecursionError, yaml.YAMLError) as error:
-        raise ValueError(f"Invalid Markdown front matter in {path}: {error}") from error
+    except (RecursionError, yaml.YAMLError):
+        raise ValueError(f"Invalid Markdown front matter in {path}") from None
     if not isinstance(metadata, Mapping):
         raise ValueError(f"Invalid Markdown front matter in {path}: expected a mapping")
 
