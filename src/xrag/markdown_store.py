@@ -43,6 +43,51 @@ _TRANSLATION_FIELDS = {
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(
+    loader: yaml.SafeLoader, node: yaml.nodes.MappingNode, deep: bool = False
+) -> dict[object, object]:
+    loader.flatten_mapping(node)
+    mapping: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in mapping
+        except TypeError as error:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                "found an unhashable key",
+                key_node.start_mark,
+            ) from error
+        if duplicate:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                "found a duplicate key",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
+def safe_load_unique(content: str) -> object:
+    return yaml.load(content, Loader=_UniqueKeyLoader)
+
+
+class _MarkdownProblem(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+
 class MarkdownStore:
     """A canonical, human-readable Markdown archive of collected X posts."""
 
@@ -135,15 +180,24 @@ class MarkdownStore:
         return path
 
     def read(self, path: Path) -> Post:
-        metadata, body = self._parse(Path(path))
+        path = Path(path)
+        problem: _MarkdownProblem | None = None
         try:
+            metadata, body = self._parse(path)
             canonical = _is_canonical_metadata(metadata)
-            text = extract_body_text(body, canonical=canonical)
-            text_zh = extract_body_translation(body, canonical=canonical)
-            translation_zh = _translation_from_value(metadata.get("translation_zh"))
-            text_zh = _validate_translation_pair(
-                text, text_zh, translation_zh, "translation_zh"
-            )
+            try:
+                text = extract_body_text(body, canonical=canonical)
+                text_zh = extract_body_translation(body, canonical=canonical)
+            except ValueError:
+                raise _MarkdownProblem("markdown-markers")
+            try:
+                translation_zh = _translation_from_value(metadata.get("translation_zh"))
+                text_zh = _validate_translation_pair(
+                    text, text_zh, translation_zh, "translation_zh"
+                )
+                quoted_post = _quoted_from_value(metadata.get("quoted_tweet"))
+            except (TypeError, ValueError):
+                raise _MarkdownProblem("translation-metadata")
             return Post(
                 id=_scalar(metadata["id"], "id"),
                 author=_scalar(metadata["author"], "author"),
@@ -155,15 +209,19 @@ class MarkdownStore:
                 views=int(metadata["views"]),
                 media_urls=_strings(metadata["media_urls"]),
                 media_posters=_strings(metadata.get("media_posters", [])),
-                quoted_post=_quoted_from_value(metadata.get("quoted_tweet")),
+                quoted_post=quoted_post,
                 local_media=_local_media_from_value(metadata.get("local_media", [])),
                 source_keywords=_strings(metadata["source_keywords"]),
                 source_type=_scalar(metadata["source_type"], "source_type"),
                 text_zh=text_zh,
                 translation_zh=translation_zh,
             )
-        except (KeyError, TypeError, ValueError) as error:
-            raise ValueError(f"invalid Markdown front matter in {path}: {error}") from error
+        except _MarkdownProblem as error:
+            problem = error
+        except (KeyError, OverflowError, TypeError, ValueError, RecursionError):
+            problem = _MarkdownProblem("front-matter")
+        if problem is not None:
+            raise ValueError(f"Invalid import data in {path}: {problem.code}")
 
     def get(self, post_id: str) -> Post | None:
         path = self._path_for(post_id)
@@ -219,19 +277,19 @@ class MarkdownStore:
     def _parse(self, path: Path) -> tuple[dict[str, object], str]:
         try:
             content = path.read_text(encoding="utf-8")
-        except OSError as error:
-            raise ValueError(f"cannot read Markdown post {path}: {error}") from error
+        except OSError:
+            raise _MarkdownProblem("front-matter")
         if not content.startswith("---\n"):
-            raise ValueError(f"invalid Markdown front matter in {path}: missing opening delimiter")
+            raise _MarkdownProblem("front-matter")
         end = content.find("\n---\n", 4)
         if end < 0:
-            raise ValueError(f"invalid Markdown front matter in {path}: missing closing delimiter")
+            raise _MarkdownProblem("front-matter")
         try:
-            metadata = yaml.safe_load(content[4:end])
-        except yaml.YAMLError as error:
-            raise ValueError(f"invalid Markdown front matter in {path}: {error}") from error
+            metadata = safe_load_unique(content[4:end])
+        except (RecursionError, yaml.YAMLError):
+            raise _MarkdownProblem("front-matter")
         if not isinstance(metadata, dict) or any(field not in metadata for field in _FRONT_MATTER_FIELDS):
-            raise ValueError(f"invalid Markdown front matter in {path}: required fields are missing")
+            raise _MarkdownProblem("front-matter")
         return metadata, content[end + len("\n---\n") :].lstrip("\n")
 
 

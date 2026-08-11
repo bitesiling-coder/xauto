@@ -12,6 +12,7 @@ from .markdown_store import (
     _is_canonical_metadata,
     _local_media_from_value,
     _quoted_from_value,
+    safe_load_unique,
     _translation_from_value,
     _validate_translation_pair,
     extract_body_text,
@@ -23,12 +24,18 @@ from .models import Post
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 
+class _ImportProblem(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+
 def load_posts(path: Path) -> list[Post]:
     """Load and normalize posts from one YAML, JSON, or Markdown file."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix not in {".yaml", ".yml", ".json", ".md"}:
         raise ValueError(f"Unsupported import file type: {path.suffix or '(no extension)'}")
+    problem: _ImportProblem | None = None
     try:
         if suffix in {".yaml", ".yml"}:
             rows = _load_yaml(path)
@@ -41,47 +48,49 @@ def load_posts(path: Path) -> list[Post]:
         posts = [_normalize_row(row) for row in normalized_rows]
         _validate_post_ids(posts)
         return posts
-    except (
-        OSError,
-        RecursionError,
-        TypeError,
-        ValueError,
-        yaml.YAMLError,
-        json.JSONDecodeError,
-    ):
-        raise ValueError(f"Invalid import data in {path}") from None
+    except _ImportProblem as error:
+        problem = error
+    except json.JSONDecodeError:
+        problem = _ImportProblem("json-syntax")
+    except (RecursionError, yaml.YAMLError):
+        problem = _ImportProblem(_syntax_code(suffix))
+    except OSError:
+        problem = _ImportProblem(_syntax_code(suffix))
+    except (TypeError, ValueError):
+        problem = _ImportProblem("post-fields")
+    if problem is not None:
+        raise ValueError(f"Invalid import data in {path}: {problem.code}")
+
+
+def _syntax_code(suffix: str) -> str:
+    if suffix == ".json":
+        return "json-syntax"
+    if suffix == ".md":
+        return "front-matter"
+    return "yaml-syntax"
 
 
 def _load_yaml(path: Path) -> object:
-    try:
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, RecursionError, yaml.YAMLError):
-        raise ValueError(f"Cannot load YAML file {path}") from None
+    return safe_load_unique(path.read_text(encoding="utf-8"))
 
 
 def _load_json(path: Path) -> object:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, RecursionError, json.JSONDecodeError):
-        raise ValueError(f"Cannot load JSON file {path}") from None
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _load_markdown(path: Path) -> dict[str, object]:
-    try:
-        content = path.read_text(encoding="utf-8")
-    except OSError:
-        raise ValueError(f"Cannot read Markdown file {path}") from None
+    content = path.read_text(encoding="utf-8")
     if not content.startswith("---\n"):
-        raise ValueError(f"Invalid Markdown front matter in {path}: missing opening delimiter")
+        raise _ImportProblem("front-matter")
     end = content.find("\n---\n", 4)
     if end < 0:
-        raise ValueError(f"Invalid Markdown front matter in {path}: missing closing delimiter")
+        raise _ImportProblem("front-matter")
     try:
-        metadata = yaml.safe_load(content[4:end])
+        metadata = safe_load_unique(content[4:end])
     except (RecursionError, yaml.YAMLError):
-        raise ValueError(f"Invalid Markdown front matter in {path}") from None
+        raise _ImportProblem("front-matter")
     if not isinstance(metadata, Mapping):
-        raise ValueError(f"Invalid Markdown front matter in {path}: expected a mapping")
+        raise _ImportProblem("front-matter")
 
     row = dict(metadata)
     if "id" not in row and _SAFE_ID.fullmatch(path.stem):
@@ -96,8 +105,8 @@ def _load_markdown(path: Path) -> dict[str, object]:
             body,
             canonical=_is_canonical_metadata(row),
         )
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"Invalid Markdown body in {path}") from error
+    except (TypeError, ValueError):
+        raise _ImportProblem("markdown-markers")
     return row
 
 
@@ -105,23 +114,31 @@ def _rows(value: object) -> list[Mapping[object, object]]:
     if isinstance(value, Mapping):
         return [value]
     if not isinstance(value, list):
-        raise ValueError("Import root must be a mapping or list of mappings")
+        raise _ImportProblem("document-shape")
     if not all(isinstance(row, Mapping) for row in value):
-        raise ValueError("Each imported post must be a mapping")
+        raise _ImportProblem("document-shape")
     return value
 
 
 def _normalize_row(row: Mapping[object, object]) -> Post:
     post_id = _identifier(row.get("id"))
     if not post_id:
-        raise ValueError("Each imported post requires a nonempty id")
+        raise _ImportProblem("post-id")
     text = _string(row.get("text"))
     if not text:
-        raise ValueError("Each imported post requires nonempty text")
-    translation_zh = _translation_from_value(row.get("translation_zh"))
-    text_zh = _validate_translation_pair(
-        text, row.get("text_zh", ""), translation_zh, "translation_zh"
-    )
+        raise _ImportProblem("post-fields")
+    try:
+        translation_zh = _translation_from_value(row.get("translation_zh"))
+        text_zh = _validate_translation_pair(
+            text, row.get("text_zh", ""), translation_zh, "translation_zh"
+        )
+    except (TypeError, ValueError):
+        raise _ImportProblem("translation-metadata")
+    try:
+        quoted_post = _quoted_from_value(row.get("quoted_tweet"))
+        local_media = _local_media_from_value(row.get("local_media", []))
+    except (TypeError, ValueError):
+        raise _ImportProblem("post-fields")
 
     return Post(
         id=post_id,
@@ -134,8 +151,8 @@ def _normalize_row(row: Mapping[object, object]) -> Post:
         views=_nonnegative_integer(row.get("views")),
         media_urls=_strings(row.get("media_urls")),
         media_posters=_strings(row.get("media_posters")),
-        quoted_post=_quoted_from_value(row.get("quoted_tweet")),
-        local_media=_local_media_from_value(row.get("local_media", [])),
+        quoted_post=quoted_post,
+        local_media=local_media,
         source_keywords=_strings(row.get("source_keywords")),
         source_type="import",
         text_zh=text_zh,
@@ -147,10 +164,10 @@ def _validate_post_ids(posts: list[Post]) -> None:
     seen: set[str] = set()
     for post in posts:
         if not _SAFE_ID.fullmatch(post.id):
-            raise ValueError(f"unsafe post ID: {post.id!r}")
+            raise _ImportProblem("post-id")
         folded_id = post.id.casefold()
         if folded_id in seen:
-            raise ValueError(f"case-insensitive collision for post ID: {post.id!r}")
+            raise _ImportProblem("post-id")
         seen.add(folded_id)
 
 

@@ -31,9 +31,113 @@ def translation_mapping(text: str, **changes: object) -> dict[str, object]:
 def assert_invalid_import(path: Path) -> ValueError:
     with pytest.raises(ValueError) as error:
         load_posts(path)
-    assert str(error.value) == f"Invalid import data in {path}"
+    assert str(error.value).startswith(f"Invalid import data in {path}: ")
     assert error.value.__cause__ is None
+    assert error.value.__context__ is None
     return error.value
+
+
+def exception_graph(error: BaseException) -> list[BaseException]:
+    pending = [error]
+    seen: set[int] = set()
+    result: list[BaseException] = []
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        result.append(current)
+        pending.extend(
+            child
+            for child in (current.__cause__, current.__context__)
+            if child is not None
+        )
+    return result
+
+
+@pytest.mark.parametrize(
+    ("filename", "content", "code", "sensitive"),
+    [
+        ("syntax.yaml", "text: [YAML_SECRET\n", "yaml-syntax", "YAML_SECRET"),
+        ("syntax.json", '{"text":"JSON_SYNTAX_SECRET",}', "json-syntax", "JSON_SYNTAX_SECRET"),
+        (
+            "frontmatter.md",
+            "---\nid: safe\ntext: [FRONTMATTER_SECRET\n---\nbody\n",
+            "front-matter",
+            "FRONTMATTER_SECRET",
+        ),
+        (
+            "metadata.json",
+            json.dumps(
+                {
+                    "id": "safe",
+                    "text": "original",
+                    "text_zh": "translation",
+                    "translation_zh": "JSON_METADATA_SECRET",
+                }
+            ),
+            "translation-metadata",
+            "JSON_METADATA_SECRET",
+        ),
+        (
+            "markers.md",
+            "---\nid: safe\nbody_format: xrag-v1\n---\n"
+            "<!-- xrag:text:start -->\noriginal\n<!-- xrag:text:end -->\n"
+            "<!-- xrag:text-zh:start -->\nMARKER_SECRET\n",
+            "markdown-markers",
+            "MARKER_SECRET",
+        ),
+    ],
+)
+def test_load_posts_returns_a_detached_categorized_error_without_secrets(
+    tmp_path: Path, filename: str, content: str, code: str, sensitive: str
+) -> None:
+    path = tmp_path / filename
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError) as raised:
+        load_posts(path)
+
+    error = raised.value
+    assert str(error) == f"Invalid import data in {path}: {code}"
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert all(sensitive not in str(item) for item in exception_graph(error))
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "id: DUPLICATE_TOP_SECRET\nid: second\ntext: valid\n",
+        "text: DUPLICATE_TEXT_SECRET\ntext: second\nid: valid\n",
+        "id: valid\ntext: original\ntext_zh: translation\ntranslation_zh:\n"
+        "  language: zh-CN\n  language: DUPLICATE_LANGUAGE_SECRET\n",
+        "id: valid\ntext: original\ntext_zh: translation\ntranslation_zh:\n"
+        "  source_sha256: DUPLICATE_SOURCE_SECRET\n  'source_sha256': other\n",
+        "id: valid\ntext: original\nquoted_tweet:\n  id: quote\n  author: A\n"
+        "  text: quoted\n  created_at: ''\n  url: https://x.com/i/status/quote\n"
+        "  media_urls: []\n  media_posters: []\n  translation_zh:\n"
+        "    source_sha256: DUPLICATE_SHA_SECRET\n"
+        "    'source_sha256': other\n",
+        "id: valid\ntext: original\nquoted_tweet:\n  id: quote\n  author: A\n"
+        "  text: quoted\n  created_at: ''\n  url: https://x.com/i/status/quote\n"
+        "  media_urls: []\n  media_posters: []\n  translation_zh:\n"
+        "    language: zh-CN\n    'language': DUPLICATE_QUOTED_LANGUAGE_SECRET\n",
+    ],
+)
+def test_load_posts_rejects_duplicate_yaml_keys_at_every_mapping_depth(
+    tmp_path: Path, content: str
+) -> None:
+    path = tmp_path / "duplicate.yaml"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError) as raised:
+        load_posts(path)
+
+    assert str(raised.value) == f"Invalid import data in {path}: yaml-syntax"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    assert "SECRET" not in str(raised.value)
 
 
 def test_load_posts_imports_yaml_and_json_lists(tmp_path: Path) -> None:
@@ -209,17 +313,18 @@ def test_load_posts_wraps_markdown_body_errors_without_leaking_payload(
 
 
 @pytest.mark.parametrize(
-    "filename, content",
+    "filename, content, code",
     [
-        ("invalid.yaml", "post: [SENSITIVE_YAML_SYNTAX\n"),
+        ("invalid.yaml", "post: [SENSITIVE_YAML_SYNTAX\n", "yaml-syntax"),
         (
             "invalid.md",
             "---\npost: [SENSITIVE_MARKDOWN_FRONTMATTER\n---\nbody\n",
+            "front-matter",
         ),
     ],
 )
 def test_load_posts_sanitizes_yaml_parser_errors(
-    tmp_path: Path, filename: str, content: str
+    tmp_path: Path, filename: str, content: str, code: str
 ) -> None:
     path = tmp_path / filename
     path.write_text(content, encoding="utf-8")
@@ -227,28 +332,31 @@ def test_load_posts_sanitizes_yaml_parser_errors(
     with pytest.raises(ValueError) as error:
         load_posts(path)
 
-    assert str(error.value) == f"Invalid import data in {path}"
+    assert str(error.value) == f"Invalid import data in {path}: {code}"
     assert "SENSITIVE" not in str(error.value)
     assert "while parsing" not in str(error.value)
     assert error.value.__cause__ is None
+    assert error.value.__context__ is None
 
 
 @pytest.mark.parametrize(
-    "filename, content",
+    "filename, content, code",
     [
-        ("scalar.yaml", "SENSITIVE_SCALAR_ROOT\n"),
+        ("scalar.yaml", "SENSITIVE_SCALAR_ROOT\n", "document-shape"),
         (
             "rows.json",
             '[{"id":"valid","text":"valid"},"SENSITIVE_NONMAPPING_ROW"]',
+            "document-shape",
         ),
         (
             "unsafe.json",
             '{"id":"../SENSITIVE_UNSAFE_ID","text":"valid"}',
+            "post-id",
         ),
     ],
 )
 def test_load_posts_sanitizes_shape_and_identifier_errors(
-    tmp_path: Path, filename: str, content: str
+    tmp_path: Path, filename: str, content: str, code: str
 ) -> None:
     path = tmp_path / filename
     path.write_text(content, encoding="utf-8")
@@ -256,9 +364,10 @@ def test_load_posts_sanitizes_shape_and_identifier_errors(
     with pytest.raises(ValueError) as error:
         load_posts(path)
 
-    assert str(error.value) == f"Invalid import data in {path}"
+    assert str(error.value) == f"Invalid import data in {path}: {code}"
     assert "SENSITIVE" not in str(error.value)
     assert error.value.__cause__ is None
+    assert error.value.__context__ is None
 
 
 @pytest.mark.parametrize("suffix, content", [

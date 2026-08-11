@@ -570,7 +570,10 @@ def test_import_directory_sorts_files_rejects_partial_bad_file_and_skips_canonic
     assert vectors.indexed == ["b"]
     assert not (canonical / "would-be-partial.md").exists()
     error_log = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
-    assert f"Invalid import data in {source / 'a.yaml'}" in error_log
+    [record] = [json.loads(line) for line in error_log.splitlines()]
+    assert record["message"] == (
+        f"Invalid import data in {source / 'a.yaml'}: post-fields"
+    )
     assert "would-be-partial" not in error_log
     assert "broken" not in error_log
     assert "okay" not in error_log
@@ -649,8 +652,9 @@ def test_import_error_log_removes_secrets_and_body_from_multiline_parser_error(
     }
 
     errors = (tmp_path / "logs/errors.jsonl").read_text(encoding="utf-8")
+    [record] = [json.loads(line) for line in errors.splitlines()]
     assert "ValueError" in errors
-    assert f"Invalid import data in {source}" in errors
+    assert record["message"] == f"Invalid import data in {source}: yaml-syntax"
     assert "Cannot load YAML" not in errors
     assert "TOKEN" not in errors
     assert "COOKIE" not in errors

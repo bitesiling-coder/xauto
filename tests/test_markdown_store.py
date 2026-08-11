@@ -301,8 +301,12 @@ def test_read_wraps_invalid_translation_frontmatter(
     end = content.index("\n---\n", start)
     path.write_text(content[:start] + replacement + "\n" + content[end:], encoding="utf-8")
 
-    with pytest.raises(ValueError, match="invalid Markdown front matter"):
+    with pytest.raises(ValueError) as raised:
         MarkdownStore(tmp_path).read(path)
+
+    assert str(raised.value) == f"Invalid import data in {path}: translation-metadata"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 @pytest.mark.parametrize(
@@ -468,8 +472,12 @@ def test_read_rejects_malformed_optional_media_metadata(tmp_path: Path) -> None:
     )
     path.write_text(content, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="local_media"):
+    with pytest.raises(ValueError) as raised:
         store.read(path)
+
+    assert str(raised.value) == f"Invalid import data in {path}: front-matter"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 def test_second_upsert_refreshes_post_and_merges_keywords(tmp_path: Path) -> None:
@@ -512,8 +520,49 @@ def test_read_rejects_missing_or_invalid_front_matter(tmp_path: Path) -> None:
     path = tmp_path / "broken.md"
     path.write_text("not front matter\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="front matter"):
+    with pytest.raises(ValueError) as raised:
         MarkdownStore(tmp_path).read(path)
+
+    assert str(raised.value) == f"Invalid import data in {path}: front-matter"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+def test_read_rejects_duplicate_canonical_front_matter_without_leaking_content(
+    tmp_path: Path,
+) -> None:
+    store = MarkdownStore(tmp_path)
+    path = store.upsert(make_post())
+    content = path.read_text(encoding="utf-8")
+    path.write_text(
+        content.replace("id: '123'\n", "id: '123'\nid: DUPLICATE_SECRET\n", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as raised:
+        store.read(path)
+
+    assert str(raised.value) == f"Invalid import data in {path}: front-matter"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    assert "DUPLICATE_SECRET" not in str(raised.value)
+
+
+@pytest.mark.parametrize("field", ["likes", "views"])
+def test_read_wraps_nonfinite_numeric_front_matter(field: str, tmp_path: Path) -> None:
+    store = MarkdownStore(tmp_path)
+    path = store.upsert(make_post())
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(f"{field}: {5 if field == 'likes' else 100}", f"{field}: .inf", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as raised:
+        store.read(path)
+
+    assert str(raised.value) == f"Invalid import data in {path}: front-matter"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 def test_rejects_unsafe_ids_and_iterates_sorted_or_empty(tmp_path: Path) -> None:
