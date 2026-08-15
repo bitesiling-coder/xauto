@@ -191,7 +191,10 @@ h2 {
 }
 
 .refresh-button,
+.sync-button,
+.rewrite-button,
 .detail-button,
+.rewrite-select-button,
 .filter-button,
 .dialog-close {
   border: 0;
@@ -208,6 +211,24 @@ h2 {
   color: #fdfefe;
   font-weight: 700;
   box-shadow: 0 8px 20px rgba(38, 49, 61, 0.16);
+}
+
+.sync-button,
+.rewrite-button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #9dc9bf;
+  border-radius: 999px;
+  background: var(--pastel-green);
+  color: #245c52;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.sync-button:hover,
+.rewrite-button:hover {
+  border-color: #6fae9f;
+  background: #dcefe9;
 }
 
 main {
@@ -234,6 +255,150 @@ main {
   border-color: #efcaca;
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 320px);
+  align-items: start;
+  gap: 28px;
+}
+
+.dashboard-content {
+  min-width: 0;
+}
+
+.rewrite-panel {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid #dce6eb;
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+}
+
+.rewrite-heading-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rewrite-heading-row h2 {
+  font-size: 1.35rem;
+}
+
+.text-button,
+.rewrite-select-button {
+  border: 0;
+  background: transparent;
+  color: #286f63;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rewrite-hint,
+.rewrite-status,
+.rewrite-footnote,
+.rewrite-settings-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.rewrite-status {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pastel-blue);
+  color: #365c79;
+}
+
+.rewrite-status[data-tone="warning"],
+.rewrite-settings-status[data-tone="warning"] {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.rewrite-status[data-tone="error"],
+.rewrite-settings-status[data-tone="error"] {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.rewrite-label,
+.rewrite-settings-form label {
+  color: var(--small-text);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.rewrite-panel textarea,
+.rewrite-panel select,
+.rewrite-settings-form input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.rewrite-panel textarea {
+  min-height: 128px;
+  padding: 11px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.rewrite-panel select,
+.rewrite-settings-form input {
+  min-height: 42px;
+  padding: 0 10px;
+}
+
+.rewrite-results {
+  display: grid;
+  gap: 10px;
+}
+
+.rewrite-result {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e1e8ec;
+  border-radius: 12px;
+  background: #fbfdfd;
+}
+
+.rewrite-result p {
+  margin: 0;
+  color: #3e4b59;
+  font-size: 0.88rem;
+  white-space: pre-wrap;
+}
+
+.rewrite-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.76rem;
+}
+
+.rewrite-settings-form {
+  display: grid;
+  gap: 12px;
+  padding: clamp(22px, 4vw, 36px);
+}
+
+.rewrite-settings-form > p:not(.rewrite-settings-status) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 section + section {
@@ -295,6 +460,21 @@ section + section {
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.16em;
+}
+
+.media-fallback-label {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 1;
+  padding: 5px 9px;
+  border: 1px solid rgba(83, 111, 131, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #526b80;
+  font-size: 0.7rem;
+  font-weight: 800;
+  backdrop-filter: blur(8px);
 }
 
 .lead-media img,
@@ -611,6 +791,11 @@ section + section {
   font-weight: 750;
 }
 
+.rewrite-select-button {
+  min-height: 36px;
+  padding: 0 4px;
+}
+
 .empty-state {
   grid-column: 1 / -1;
   margin: 0;
@@ -751,6 +936,15 @@ dialog::backdrop {
 }
 
 @media (max-width: 900px) {
+  .dashboard-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rewrite-panel {
+    position: static;
+    order: -1;
+  }
+
   .lead-story {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr);
   }
@@ -784,6 +978,11 @@ dialog::backdrop {
     align-items: stretch;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .sync-button,
+  .refresh-button {
+    justify-content: center;
   }
 
   .updated-copy {

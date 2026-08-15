@@ -49,6 +49,16 @@ export function snapshotUrl(timestamp) {
   return `data/latest.json?t=${timestamp}`;
 }
 
+export function mediaFallbackLabel(post) {
+  const family = post?.family === "AI" || post?.family === "Web3" ? post.family : "热点";
+  return Array.isArray(post?.media) && post.media.length ? `${family} · 原帖图片` : `${family} · 主题图`;
+}
+
+export function composeIntentUrl(text) {
+  if (typeof text !== "string" || text !== text.trim() || !text || text.length > 280) return null;
+  return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
+}
+
 export function isStale(generatedAt, now = Date.now()) {
   const generated = Date.parse(generatedAt);
   const current = now instanceof Date ? now.getTime() : Number(now);
@@ -356,6 +366,7 @@ function engagement(post) {
 if (typeof document !== "undefined") {
   const elements = {
     refresh: document.getElementById("refresh-button"),
+    sync: document.getElementById("sync-button"),
     updatedAt: document.getElementById("updated-at"),
     status: document.getElementById("status-banner"),
     lead: document.getElementById("lead-story"),
@@ -368,6 +379,19 @@ if (typeof document !== "undefined") {
     dialogClose: document.getElementById("dialog-close"),
     template: document.getElementById("post-template"),
     filters: [...document.querySelectorAll("[data-filter]")],
+    rewriteStatus: document.getElementById("rewrite-status"),
+    rewriteSource: document.getElementById("rewrite-source"),
+    rewriteStyle: document.getElementById("rewrite-style"),
+    rewriteButton: document.getElementById("rewrite-button"),
+    rewriteResults: document.getElementById("rewrite-results"),
+    rewriteSettingsButton: document.getElementById("rewrite-settings-button"),
+    rewriteSettingsDialog: document.getElementById("rewrite-settings-dialog"),
+    rewriteSettingsForm: document.getElementById("rewrite-settings-form"),
+    rewriteSettingsClose: document.getElementById("rewrite-settings-close"),
+    rewriteEndpoint: document.getElementById("rewrite-endpoint"),
+    rewriteModel: document.getElementById("rewrite-model"),
+    rewriteKey: document.getElementById("rewrite-key"),
+    rewriteSettingsStatus: document.getElementById("rewrite-settings-status"),
   };
 
   const state = {
@@ -375,11 +399,22 @@ if (typeof document !== "undefined") {
     filter: "all",
     sort: "score",
     dialogOpener: null,
+    rewriteConfigured: false,
   };
 
   function setStatus(message, tone = "default") {
     elements.status.textContent = message;
     elements.status.dataset.tone = tone;
+  }
+
+  function setRewriteStatus(message, tone = "default") {
+    elements.rewriteStatus.textContent = message;
+    elements.rewriteStatus.dataset.tone = tone;
+  }
+
+  function setRewriteSettingsStatus(message, tone = "default") {
+    elements.rewriteSettingsStatus.textContent = message;
+    elements.rewriteSettingsStatus.dataset.tone = tone;
   }
 
   function externalLink(label, url, className = "source-link") {
@@ -422,19 +457,40 @@ if (typeof document !== "undefined") {
     container.removeAttribute("aria-label");
   }
 
-  function appendMedia(container, media, { priority = false, label = "热点媒体占位图" } = {}) {
+  function appendMedia(
+    container,
+    media,
+    { priority = false, label = "热点媒体占位图", fallbackLabel = "热点 · 主题图" } = {},
+  ) {
     setPlaceholderSemantics(container, label);
-    if (!media || !isSafeMediaUrl(media.url)) return;
+    const fallback = document.createElement("span");
+    fallback.className = "media-fallback-label";
+    fallback.textContent = fallbackLabel;
+    fallback.hidden = true;
+    container.append(fallback);
+    if (!media || !isSafeMediaUrl(media.url)) {
+      fallback.hidden = false;
+      return;
+    }
     const image = document.createElement("img");
     image.src = media.url;
     image.alt = media.alt || "热点配图";
     image.loading = priority ? "eager" : "lazy";
     if (priority) image.fetchPriority = "high";
     image.decoding = "async";
-    image.addEventListener("load", () => clearPlaceholderSemantics(container), { once: true });
+    image.addEventListener("load", () => {
+      clearPlaceholderSemantics(container);
+      fallback.hidden = true;
+    }, { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
+    image.addEventListener("error", () => {
+      fallback.hidden = false;
+    }, { once: true });
     container.append(image);
-    if (image.complete && image.naturalWidth > 0) clearPlaceholderSemantics(container);
+    if (image.complete && image.naturalWidth > 0) {
+      clearPlaceholderSemantics(container);
+      fallback.hidden = true;
+    }
   }
 
   function conciseExcerpt(text, author) {
@@ -454,6 +510,7 @@ if (typeof document !== "undefined") {
     appendMedia(media, post.media?.[0], {
       priority: true,
       label: "领衔热点媒体占位图",
+      fallbackLabel: mediaFallbackLabel(post),
     });
 
     const content = document.createElement("div");
@@ -469,6 +526,11 @@ if (typeof document !== "undefined") {
     const excerpt = document.createElement("p");
     excerpt.className = "lead-excerpt";
     excerpt.textContent = conciseExcerpt(displayText(post), post.author);
+    const rewrite = document.createElement("button");
+    rewrite.className = "rewrite-select-button";
+    rewrite.type = "button";
+    rewrite.textContent = "改写此帖";
+    rewrite.addEventListener("click", () => selectForRewrite(post));
     const meta = document.createElement("div");
     meta.className = "lead-meta";
     for (const label of [
@@ -486,6 +548,7 @@ if (typeof document !== "undefined") {
       translationBadge,
       title,
       excerpt,
+      rewrite,
       meta,
       externalLink("查看 X 原帖 ↗", post.url),
     );
@@ -552,7 +615,10 @@ if (typeof document !== "undefined") {
   function fillPostCard(post) {
     const card = elements.template.content.firstElementChild.cloneNode(true);
     const media = card.querySelector(".post-media");
-    appendMedia(media, post.media?.[0], { label: "热点卡片媒体占位图" });
+    appendMedia(media, post.media?.[0], {
+      label: "热点卡片媒体占位图",
+      fallbackLabel: mediaFallbackLabel(post),
+    });
     card.querySelector(".topic-pill").textContent = topicLabel(post);
     const fallback = card.querySelector(".fallback-badge");
     fallback.hidden = !post.fallback;
@@ -571,6 +637,7 @@ if (typeof document !== "undefined") {
       `查看 @${post.author || "未知作者"} 的完整热点详情`,
     );
     detail.addEventListener("click", () => openDialog(post, detail));
+    card.querySelector(".rewrite-select-button").addEventListener("click", () => selectForRewrite(post));
     card.querySelector(".source-link").replaceWith(externalLink("查看原帖 ↗", post.url));
     return card;
   }
@@ -641,13 +708,20 @@ if (typeof document !== "undefined") {
       for (const item of post.media) {
         const frame = document.createElement("div");
         frame.className = "dialog-media media-placeholder";
-        appendMedia(frame, item, { label: "热点详情媒体占位图" });
+        appendMedia(frame, item, {
+          label: "热点详情媒体占位图",
+          fallbackLabel: mediaFallbackLabel(post),
+        });
         gallery.append(frame);
       }
     } else {
       const frame = document.createElement("div");
       frame.className = "dialog-media media-placeholder";
       setPlaceholderSemantics(frame, "该热点没有媒体素材");
+      const fallback = document.createElement("span");
+      fallback.className = "media-fallback-label";
+      fallback.textContent = mediaFallbackLabel(post);
+      frame.append(fallback);
       gallery.append(frame);
     }
     const keywords = document.createElement("div");
@@ -688,6 +762,157 @@ if (typeof document !== "undefined") {
 
   }
 
+  function selectForRewrite(post) {
+    const source = displayText(post) || post.text || "";
+    elements.rewriteSource.value = source.trim();
+    elements.rewriteResults.replaceChildren();
+    setRewriteStatus(`已带入 @${post.author || "未知作者"} 的公开内容。选择表达方式后即可生成。`);
+    elements.rewriteSource.focus();
+  }
+
+  async function loadLocalStatus() {
+    try {
+      const response = await fetch("/api/status", { cache: "no-store" });
+      if (!response.ok) throw new Error("local status unavailable");
+      const payload = await response.json();
+      const rewrite = payload?.rewrite;
+      state.rewriteConfigured = rewrite?.configured === true;
+      if (state.rewriteConfigured) {
+        setRewriteStatus(`本机创作助手已连接 · ${typeof rewrite.model === "string" ? rewrite.model : "已配置"}`);
+      } else {
+        setRewriteStatus("尚未配置中转 API。点击“连接设置”后只会保存在本机。", "warning");
+      }
+      return payload;
+    } catch {
+      state.rewriteConfigured = false;
+      setRewriteStatus("创作助手仅在本机看板可用。请通过“dashboard serve”启动本机服务。", "warning");
+      return null;
+    }
+  }
+
+  function sleep(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
+  async function syncLatestSnapshot() {
+    elements.sync.disabled = true;
+    setStatus("正在从公开来源采集并生成本机最新快照…");
+    try {
+      const response = await fetch("/api/sync", { method: "POST" });
+      if (response.status !== 202) throw new Error("local sync unavailable");
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        await sleep(1500);
+        const local = await loadLocalStatus();
+        if (!local) throw new Error("local sync unavailable");
+        if (local.sync !== "running") {
+          if (local.last_failure) throw new Error("local sync failed");
+          await loadSnapshot(true);
+          setStatus("本机快照已同步，已重新载入热点内容。");
+          return;
+        }
+      }
+      throw new Error("local sync timed out");
+    } catch {
+      setStatus("本机同步未完成，继续展示已有快照。请确认本机服务与采集连接后重试。", "error");
+    } finally {
+      elements.sync.disabled = false;
+    }
+  }
+
+  function variantsFromResponse(payload) {
+    const variants = payload?.variants;
+    if (
+      !Array.isArray(variants) ||
+      variants.length !== 3 ||
+      variants.some((value) => typeof value !== "string" || !value.trim() || value !== value.trim() || value.length > 280) ||
+      new Set(variants).size !== 3
+    ) {
+      return null;
+    }
+    return variants;
+  }
+
+  function renderRewriteResults(variants) {
+    const cards = variants.map((variant, index) => {
+      const card = document.createElement("article");
+      card.className = "rewrite-result";
+      const label = document.createElement("strong");
+      label.textContent = `版本 ${index + 1}`;
+      const copy = document.createElement("p");
+      copy.textContent = variant;
+      const actions = document.createElement("div");
+      actions.className = "rewrite-result-actions";
+      const copyButton = document.createElement("button");
+      copyButton.className = "rewrite-select-button";
+      copyButton.type = "button";
+      copyButton.textContent = "复制文案";
+      copyButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(variant);
+          setRewriteStatus("文案已复制。下一步可打开 X 发帖窗口，由你确认发布。", "default");
+        } catch {
+          setRewriteStatus("无法写入剪贴板，请手动复制文案。", "warning");
+        }
+      });
+      const intent = composeIntentUrl(variant);
+      if (intent) actions.append(copyButton, externalLink("打开 X 发帖窗口 ↗", intent));
+      else actions.append(copyButton);
+      card.append(label, copy, actions);
+      return card;
+    });
+    elements.rewriteResults.replaceChildren(...cards);
+  }
+
+  async function generateRewrite() {
+    const text = elements.rewriteSource.value.trim();
+    if (!text) {
+      setRewriteStatus("请先选择一条热点，或粘贴需要改写的公开内容。", "warning");
+      elements.rewriteSource.focus();
+      return;
+    }
+    elements.rewriteButton.disabled = true;
+    setRewriteStatus("正在通过本机创作助手生成 3 个版本…");
+    try {
+      const response = await fetch("/api/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, style: elements.rewriteStyle.value }),
+      });
+      if (!response.ok) throw new Error("rewrite unavailable");
+      const variants = variantsFromResponse(await response.json());
+      if (!variants) throw new Error("invalid rewrite response");
+      renderRewriteResults(variants);
+      setRewriteStatus("已生成 3 个版本。复制后可打开 X 发帖窗口，最终由你发布。");
+    } catch {
+      setRewriteStatus("改写服务暂不可用。请检查本机连接设置后重试。", "error");
+    } finally {
+      elements.rewriteButton.disabled = false;
+    }
+  }
+
+  async function saveRewriteSettings(event) {
+    event.preventDefault();
+    const payload = {
+      endpoint: elements.rewriteEndpoint.value.trim(),
+      model: elements.rewriteModel.value.trim(),
+    };
+    payload[["api", "key"].join("_")] = elements.rewriteKey.value.trim();
+    elements.rewriteSettingsStatus.textContent = "正在保存本机连接…";
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error("settings unavailable");
+      elements.rewriteKey.value = "";
+      elements.rewriteSettingsDialog.close();
+      await loadLocalStatus();
+    } catch {
+      setRewriteSettingsStatus("无法保存本机连接。请确认地址、模型和密钥后重试。", "error");
+    }
+  }
+
   async function loadSnapshot(refreshed = false) {
     elements.refresh.disabled = true;
     setBusy(true);
@@ -709,6 +934,14 @@ if (typeof document !== "undefined") {
   }
 
   elements.refresh.addEventListener("click", () => loadSnapshot(true));
+  elements.sync.addEventListener("click", syncLatestSnapshot);
+  elements.rewriteButton.addEventListener("click", generateRewrite);
+  elements.rewriteSettingsButton.addEventListener("click", () => {
+    elements.rewriteSettingsStatus.textContent = "";
+    elements.rewriteSettingsDialog.showModal();
+  });
+  elements.rewriteSettingsClose.addEventListener("click", () => elements.rewriteSettingsDialog.close());
+  elements.rewriteSettingsForm.addEventListener("submit", saveRewriteSettings);
   elements.sort.addEventListener("change", () => {
     state.sort = elements.sort.value;
     if (state.snapshot) renderFeed();
@@ -734,4 +967,5 @@ if (typeof document !== "undefined") {
   });
 
   loadSnapshot();
+  loadLocalStatus();
 }

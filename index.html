@@ -32,6 +32,14 @@
             <span aria-hidden="true">↻</span>
             立即刷新
           </button>
+          <button
+            class="sync-button"
+            id="sync-button"
+            type="button"
+            aria-label="采集并生成本机最新热点快照"
+          >
+            同步最新快照
+          </button>
         </div>
       </div>
     </header>
@@ -40,6 +48,9 @@
       <div class="status-banner" id="status-banner" role="status" aria-live="polite">
         正在加载最新热点数据…
       </div>
+
+      <div class="dashboard-layout">
+        <div class="dashboard-content">
 
       <section class="lead-section" aria-labelledby="lead-heading">
         <div class="section-heading compact-heading">
@@ -98,6 +109,35 @@
         </div>
         <div class="hotspot-feed" id="hotspot-feed" aria-live="polite" aria-busy="true"></div>
       </section>
+        </div>
+
+        <aside class="rewrite-panel" id="rewrite-panel" aria-labelledby="rewrite-heading">
+          <div class="rewrite-heading-row">
+            <div>
+              <p class="eyebrow">LOCAL CREATOR</p>
+              <h2 id="rewrite-heading">一键改写</h2>
+            </div>
+            <button class="text-button" id="rewrite-settings-button" type="button">连接设置</button>
+          </div>
+          <p class="rewrite-hint">从热点中选一条，生成适合转发的中文 X 推文。内容不会自动发布。</p>
+          <p class="rewrite-status" id="rewrite-status" role="status" aria-live="polite">正在检查本机创作助手…</p>
+          <label class="rewrite-label" for="rewrite-source">待改写内容</label>
+          <textarea
+            id="rewrite-source"
+            maxlength="10000"
+            placeholder="点击热点卡片中的“改写此帖”，或粘贴你想改写的公开内容。"
+          ></textarea>
+          <label class="rewrite-label" for="rewrite-style">表达方式</label>
+          <select id="rewrite-style">
+            <option value="insightful">观点清晰</option>
+            <option value="concise">简洁直接</option>
+            <option value="conversational">自然交流</option>
+          </select>
+          <button class="rewrite-button" id="rewrite-button" type="button">生成 3 个版本</button>
+          <div class="rewrite-results" id="rewrite-results" aria-live="polite"></div>
+          <p class="rewrite-footnote">生成后可复制或打开 X 发帖窗口；最终发布始终由你确认。</p>
+        </aside>
+      </div>
     </main>
 
     <footer class="site-footer">
@@ -115,6 +155,27 @@
         </div>
         <div id="dialog-content"></div>
       </div>
+    </dialog>
+
+    <dialog id="rewrite-settings-dialog" aria-labelledby="rewrite-settings-heading">
+      <form class="rewrite-settings-form" id="rewrite-settings-form" method="dialog">
+        <div class="dialog-toolbar">
+          <div>
+            <p class="eyebrow">LOCAL ONLY</p>
+            <h2 id="rewrite-settings-heading">中转 API 连接设置</h2>
+          </div>
+          <button id="rewrite-settings-close" class="dialog-close" type="button" aria-label="关闭连接设置">×</button>
+        </div>
+        <p>设置仅保存于这台电脑，不会进入网页、GitHub Pages 或采集内容。</p>
+        <label for="rewrite-endpoint">API 地址</label>
+        <input id="rewrite-endpoint" type="url" inputmode="url" autocomplete="off" placeholder="https://example.com/v1/chat/completions" required>
+        <label for="rewrite-model">模型名</label>
+        <input id="rewrite-model" type="text" autocomplete="off" placeholder="例如：gpt-4.1-mini" required>
+        <label for="rewrite-key">API 密钥</label>
+        <input id="rewrite-key" type="password" autocomplete="off" required>
+        <p class="rewrite-settings-status" id="rewrite-settings-status" role="status" aria-live="polite"></p>
+        <button class="rewrite-button" type="submit">保存本机连接</button>
+      </form>
     </dialog>
 
     <template id="post-template">
@@ -137,6 +198,7 @@
           </div>
           <div class="post-actions">
             <button class="detail-button" type="button" aria-label="查看完整热点详情">查看详情</button>
+            <button class="rewrite-select-button" type="button">改写此帖</button>
             <a
               class="source-link"
               target="_blank"

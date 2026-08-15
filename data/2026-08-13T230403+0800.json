@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "generated_at": "2026-08-13T23:04:03.567132+08:00",
+  "timezone": "Asia/Singapore",
+  "fallback_used": true,
+  "summary": {
+    "posts": 9,
+    "authors": 8,
+    "media": 12,
+    "engagement": 201033
+  },
+  "topics": [
+    {
+      "id": "ai-agents-security",
+      "label": "AI Agents 与 Agent Security",
+      "family": "AI",
+      "posts": 0,
+      "score": 0,
+      "top_keyword": ""
+    },
+    {
+      "id": "world-models-embodied-ai",
+      "label": "World Models 与 Embodied AI",
+      "family": "AI",
+      "posts": 0,
+      "score": 0,
+      "top_keyword": ""
+    },
+    {
+      "id": "rwa-stablecoin-payments",
+      "label": "RWA 与 Stablecoin Payments",
+      "family": "Web3",
+      "posts": 1,
+      "score": 0.25749,
+      "top_keyword": "Tokenized Stocks"
+    },
+    {
+      "id": "prediction-markets-regulation",
+      "label": "Prediction Markets 与 Crypto Regulation",
+      "family": "Web3",
+      "posts": 8,
+      "score": 0.654844,
+      "top_keyword": "Prediction Markets"
+    }
+  ],
+  "posts": [
+    {
+      "id": "2087264465838600576",
+      "author": "coinbureau",
+      "text": "🇺🇸UPDATE: The SEC's Friday crypto proposal is now seen as its FALLBACK plan as the CLARITY Act stalls. \n\nSEC Chair Paul Atkins is moving on his own \"Regulation Crypto\" rules after the Senate left for recess without a vote, per CoinDesk.  \n\nThe rules would build on the SEC-CFTC token taxonomy, creating registration exemptions and safe harbors for token launches.",
+      "created_at": "2026-08-11T19:46:42+00:00",
+      "url": "https://x.com/i/status/2087264465838600576",
+      "likes": 661,
+      "views": 56186,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.727337,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/956a0c27eac796a36bb382ac0e789779813cc384c1fd1b04f7ee578a906fba15.png",
+          "type": "image",
+          "alt": "🇺🇸UPDATE: The SEC's Friday crypto proposal is now seen as its FALLBACK plan as the CLARITY Act stalls. \n\nSEC Chair Paul Atkins is moving on his own \"Regulation "
+        },
+        {
+          "url": "assets/media/37542e5d843670e13898177b03397854d2e5d02cf6f64347ff41d30b4e325129.jpg",
+          "type": "image",
+          "alt": "🇺🇸UPDATE: The SEC's Friday crypto proposal is now seen as its FALLBACK plan as the CLARITY Act stalls. \n\nSEC Chair Paul Atkins is moving on his own \"Regulation "
+        },
+        {
+          "url": "assets/media/4a6f6a7ab83edee5348f7a19a2148cecb61182977834425e9969b5ea36f0668a.png",
+          "type": "image",
+          "alt": "🇺🇸UPDATE: The SEC's Friday crypto proposal is now seen as its FALLBACK plan as the CLARITY Act stalls. \n\nSEC Chair Paul Atkins is moving on his own \"Regulation "
+        },
+        {
+          "url": "assets/media/294f2e8752bf96daf6cb7a6973b0d82bfc97a907da2f3326c00a3db13b8d8110.png",
+          "type": "image",
+          "alt": "🇺🇸UPDATE: The SEC's Friday crypto proposal is now seen as its FALLBACK plan as the CLARITY Act stalls. \n\nSEC Chair Paul Atkins is moving on his own \"Regulation "
+        }
+      ],
+      "text_zh": "证交会的星期五加密提案 现被视为它的\"FALLBACK计划\"CLARITY Act证交会主席保罗·阿特金斯(Paul Atkins)在参议院不经投票而休会后,在参议院宣布休会后,正在自行推行“监管加密规则 ” ( CoinDesk ) 。 这些规则将以证交会-公平贸易委员会象征性分类法为基础,为象征性的发射规定注册豁免和安全港。"
+    },
+    {
+      "id": "2087263040722891096",
+      "author": "Cointelegraph",
+      "text": "🇺🇸 JUST IN: CFTC Chair Michael Selig says the agency will move forward with digital asset rulemaking whether or not the CLARITY Act passes. https://t.co/xR9uCACbSK",
+      "created_at": "2026-08-11T19:41:03+00:00",
+      "url": "https://x.com/i/status/2087263040722891096",
+      "likes": 730,
+      "views": 45410,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.723791,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/1d2678bb446d60bfad5f9aa4c204fdc80429a0102b8492817f3ed74837eb50a0.jpg",
+          "type": "image",
+          "alt": "🇺🇸 JUST IN: CFTC Chair Michael Selig says the agency will move forward with digital asset rulemaking whether or not the CLARITY Act passes. https://t.co/xR9uCAC"
+        },
+        {
+          "url": "assets/media/cf2dd43d8d88171ac169db0086c0bcb9992ef113f704b05344adb5abbf454f18.jpg",
+          "type": "video_poster",
+          "alt": "🇺🇸 JUST IN: CFTC Chair Michael Selig says the agency will move forward with digital asset rulemaking whether or not the CLARITY Act passes. https://t.co/xR9uCAC"
+        }
+      ],
+      "text_zh": "CFTC主席Michael Selig表示, 不论是否制定数字资产规则,CLARITY Act通行证。https://t.co/xR9uCACbSK"
+    },
+    {
+      "id": "2087318333255278795",
+      "author": "Cointelegraph",
+      "text": "🇺🇸 BIG: SEC to address crypto regulation on its own after the Clarity Act failed to pass Congress last week.\nhttps://t.co/zJ8jJBOXOA",
+      "created_at": "2026-08-11T23:20:45+00:00",
+      "url": "https://x.com/i/status/2087318333255278795",
+      "likes": 207,
+      "views": 33324,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.682636,
+      "fallback": true,
+      "media": [],
+      "text_zh": "BIG: 证交会在事后自行处理加密监管问题Clarity Act上周没有通过国会https://t.co/zJ8jJBOXOA"
+    },
+    {
+      "id": "2087240993896813032",
+      "author": "BankXRP",
+      "text": "JUST IN: CFTC Chair Michael Selig says the agency is prepared to advance crypto market structure regulation even if Congress fails to pass the CLARITY Act.\n\nThe Senate vote setback hasn't slowed the SEC-CFTC push Atkins and Selig are moving forward on their own regulatory track.",
+      "created_at": "2026-08-11T18:13:26+00:00",
+      "url": "https://x.com/i/status/2087240993896813032",
+      "likes": 356,
+      "views": 22972,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.653249,
+      "fallback": true,
+      "media": [],
+      "text_zh": "CFTC主席Michael Sellig说,即使国会未能通过该条例,该机构也准备推行隐秘的市场结构管理条例。CLARITY ActAtkins和Selig正在自己的监管轨道上向前推进。"
+    },
+    {
+      "id": "2087238830021599700",
+      "author": "Monera_Digital",
+      "text": "CFTC喊话：法案不过，我们自己上  \n\nCLARITY Act在参议院的推进再度受阻。多德党人以特朗普家族加密业务的利益冲突为由持续阻击，众议院去年7月已以294:134高票通过，参议院银行委员会5月也以15:9通过，但全院投票迟迟未能启动。参议院多数党领袖Thune此前已明确表态，8月休会前大概率无法完成投票，9月复会后又将面临政府拨款、国防授权法案等更拥挤的议程。  \n\n在这个背景下，CFTC主席Michael Selig公开表态：监管规则草案\"已经准备好\"，无论国会是否通过CLARITY Act，都将推进。据Law360报道，Selig计划借助CFTC目前\"一人独大\"（五席委员会仅他一人在任）的架构优势，快速推动规则落地。SEC主席Paul Atkins此前也释放过类似信号——两大监管机构均表示，即便没有成文法，也能通过现有规则制定权限覆盖大部分市场结构议题。  \n\n短期情绪利好，但别指望根本性重估：过去两周随着CLARITY Act推进放缓，Polymarket上\"2026年内签署成法\"的概率已从38%回落至30.5%左右。如果CFTC真的绕开国会推进规则，短期内会缓解市场对\"监管真空期\"的担忧，对BTC、ETH等已被3月联合声明列为\"数字商品\"的16个代币构成边际利好。  \n\n警惕预期差交易：如果9月国会复会后CLARITY Act仍无实质进展，\"监管由行政机构主导\"会成为主线叙事，届时机构资金入场节奏可能进一步依赖CFTC/SEC具体规则细则的落地时间表，而非立法本身。  \n\n短期看，\"监管来了\"是真的，但\"以何种形式来\"决定了资金反应的力度——成文法 > 行政规则的确定性差距，是接下来几个月交易这条新闻线时需要持续跟踪的关键变量。  \n\n社群Telegram：https://t.co/7WlnQBGSML\n欢迎来社群跟我们一起聊聊你的看法～",
+      "created_at": "2026-08-11T18:04:50+00:00",
+      "url": "https://x.com/i/status/2087238830021599700",
+      "likes": 67,
+      "views": 18880,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.642485,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/60bfdf7c1ea0776551f7cf9b1f4406545e4153ece262c275e5787ee0e160b2c7.jpg",
+          "type": "image",
+          "alt": "CFTC喊话：法案不过，我们自己上  \n\nCLARITY Act在参议院的推进再度受阻。多德党人以特朗普家族加密业务的利益冲突为由持续阻击，众议院去年7月已以294:134高票通过，参议院银行委员会5月也以15:9通过，但全院投票迟迟未能启动。参议院多数党领袖Thune此前已明确表态，8月休会前大概率无法完成投票，9月"
+        }
+      ]
+    },
+    {
+      "id": "2087241085751824649",
+      "author": "BitcoinArchive",
+      "text": "🇺🇸 SEC &amp; CFTC ready to issue crypto rules if Clarity Act fails — Bloomberg\n\nBoth prefer statute but won’t wait forever. https://t.co/zVHHELTjW4",
+      "created_at": "2026-08-11T18:13:48+00:00",
+      "url": "https://x.com/i/status/2087241085751824649",
+      "likes": 74,
+      "views": 15258,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.640436,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/44d8bcd13b08e96af593a4de257c183cbab1471a627fb39d931a5a4d2248aefd.jpg",
+          "type": "image",
+          "alt": "🇺🇸 SEC &amp; CFTC ready to issue crypto rules if Clarity Act fails — Bloomberg\n\nBoth prefer statute but won’t wait forever. https://t.co/zVHHELTjW4"
+        }
+      ],
+      "text_zh": "SEC & amp; CFTC 准备发布加密规则,如果Clarity ActBloomberg 两人都更喜欢法规, 但不会永远等待。https://t.co/zVHHELTjW4"
+    },
+    {
+      "id": "2087205272208937187",
+      "author": "LeviCryptoGuy",
+      "text": "🚨 BREAKING!\n\nThe CLARITY Act could be the biggest U.S. regulatory catalyst for $XRP.\n\nThe bill aims to establish clearer rules for digital assets and define the roles of the SEC &amp; CFTC. \n\nSeptember could be a big month for XRP. https://t.co/qEGoiGXaF4",
+      "created_at": "2026-08-11T15:51:29+00:00",
+      "url": "https://x.com/i/status/2087205272208937187",
+      "likes": 52,
+      "views": 3958,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.586165,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/bf3f2edb8c8357d10d1afebd00d5e47683055f8d36d6c8c69c890e234fbe1939.jpg",
+          "type": "video_poster",
+          "alt": "🚨 BREAKING!\n\nThe CLARITY Act could be the biggest U.S. regulatory catalyst for $XRP.\n\nThe bill aims to establish clearer rules for digital assets and define the"
+        }
+      ],
+      "text_zh": "断裂!CLARITY Act可能是美国最大的监管催化剂$XRP该法案旨在为数字资产制定更明确的规则,并界定SEC & amp; CFTC. 9月份可能是XRP的一个大月。https://t.co/qEGoiGXaF4"
+    },
+    {
+      "id": "2087240149130223862",
+      "author": "TheBitcoinConf",
+      "text": "🇺🇸 CFTC SAYS THEY WILL ACT AS THE REGULATING BODY FOR CRYPTO \"WHETHER OR NOT THE CLARITY ACT IS ENACTED\" 👀\n\nThe goal is to finalize rules before the end of the current administration 💯\n\nMarket structure is inevitable! 🫡 https://t.co/DGs1BbkcFu",
+      "created_at": "2026-08-11T18:10:05+00:00",
+      "url": "https://x.com/i/status/2087240149130223862",
+      "likes": 33,
+      "views": 2765,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.582653,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/744a68a74ac9715ce3eb5a2a2a9f3285f77766e493b22ae7aa8802ae10cdc1b9.jpg",
+          "type": "image",
+          "alt": "🇺🇸 CFTC SAYS THEY WILL ACT AS THE REGULATING BODY FOR CRYPTO \"WHETHER OR NOT THE CLARITY ACT IS ENACTED\" 👀\n\nThe goal is to finalize rules before the end of the "
+        },
+        {
+          "url": "assets/media/fef8c34cd3ba6181bcbd6b4cffa919dc4ccea44cdea0faad94d6079dc83f1f6a.png",
+          "type": "image",
+          "alt": "🇺🇸 CFTC SAYS THEY WILL ACT AS THE REGULATING BODY FOR CRYPTO \"WHETHER OR NOT THE CLARITY ACT IS ENACTED\" 👀\n\nThe goal is to finalize rules before the end of the "
+        }
+      ],
+      "text_zh": "CFT说他们将作为CRYPTO的管制机构CLARITY ACT目标是在本届政府结束前敲定规则,https://t.co/DGs1BbkcFu"
+    },
+    {
+      "id": "2087213371129258296",
+      "author": "Metaplex_CN",
+      "text": "在 #Solana 上有更好玩的东西，它们都有一个共同的特点：由 Metaplex Core 创造\n\n📊Core 协议资产在 6 月份和 7 月份连续创造历史新高，铸造资产超过150万个\n⚾@CandyDigital 使用 Core 技术将美国职业棒球这类大 IP 带到链上实现拍卖\n🕹️@Beezie 在 Core 技术的加持下推出了新的链上数字抓娃娃玩法\n🃏@Collector_Crypt Solana上领先大火的数字卡牌平台也使用 Core 协议铸造了他们的首批 Core 资产\n\n未来 RWA 现实世界资产，各类品牌和文化 IP ，身份以及权益......都可以通过 Metaplex 以数字资产的形式进入 Solana \n\n✨Tokenize Everything 代币化一切 @metaplex",
+      "created_at": "2026-08-11T16:23:40+00:00",
+      "url": "https://x.com/i/status/2087213371129258296",
+      "likes": 1,
+      "views": 99,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.25749,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/49388c707f537fbfb0c9273218695b76d3d0aa2b31272d93a7d7b898f3c60c80.jpg",
+          "type": "video_poster",
+          "alt": "在 #Solana 上有更好玩的东西，它们都有一个共同的特点：由 Metaplex Core 创造\n\n📊Core 协议资产在 6 月份和 7 月份连续创造历史新高，铸造资产超过150万个\n⚾@CandyDigital 使用 Core 技术将美国职业棒球这类大 IP 带到链上实现拍卖\n🕹️@Beezie 在 Core 技"
+        }
+      ]
+    }
+  ]
+}

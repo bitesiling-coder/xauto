@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "generated_at": "2026-08-13T23:13:11.922105+08:00",
+  "timezone": "Asia/Singapore",
+  "fallback_used": false,
+  "summary": {
+    "posts": 12,
+    "authors": 12,
+    "media": 8,
+    "engagement": 128732
+  },
+  "topics": [
+    {
+      "id": "ai-agents-security",
+      "label": "AI Agents 与 Agent Security",
+      "family": "AI",
+      "posts": 5,
+      "score": 0.750492,
+      "top_keyword": "Autonomous AI Agents"
+    },
+    {
+      "id": "world-models-embodied-ai",
+      "label": "World Models 与 Embodied AI",
+      "family": "AI",
+      "posts": 2,
+      "score": 0.703006,
+      "top_keyword": "World Models"
+    },
+    {
+      "id": "rwa-stablecoin-payments",
+      "label": "RWA 与 Stablecoin Payments",
+      "family": "Web3",
+      "posts": 3,
+      "score": 0.708753,
+      "top_keyword": "Tokenized Stocks"
+    },
+    {
+      "id": "prediction-markets-regulation",
+      "label": "Prediction Markets 与 Crypto Regulation",
+      "family": "Web3",
+      "posts": 2,
+      "score": 0.598892,
+      "top_keyword": "Prediction Markets"
+    }
+  ],
+  "posts": [
+    {
+      "id": "2087814350971248735",
+      "author": "caelynzh",
+      "text": "https://t.co/0nbfI8zzcN",
+      "created_at": "2026-08-13T08:11:45+00:00",
+      "url": "https://x.com/i/status/2087814350971248735",
+      "likes": 130,
+      "views": 62359,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.912014,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2087898673959346451",
+      "author": "_FORAB",
+      "text": "此前获 YZi Labs 投资的 Saturn，刚刚被 Ondo 宣布投资。随着最近比特币微策略 Strategy 转变模式，从过去的专注囤币，变成力保优先股持有人权益和利息后，有关于其暴雷的传言就少了很多。\n\n而 Saturn 这个项目本身，则是通过买入比特币储备公司 Strategy 的优先股 STRC，再发行至链上。让没有美国证券账户的人，也能间接赚它约 12% 的股息，类似把 Strategy 这家公司的利息分享给 DeFi 化。\n\n其中基于美债底层的稳定币为 USDat，与 M0、PayPal 等知名公司合作，符合监管要求。\n\n而基于微策略优先股收益底层的 sUSDat，已经从 Flowdesk、Galaxy 在内的多家机构，吸引了 8000 多万美金，除了微策略优先股本身的 12% 利息外，还有美债的补贴。\n\n目前官方确定走积分 + 未来发币路线，所以有相当一部分参与者，除了获取比特币微策略 Strategy 的优先股利息外，也是为了获得未来代币收益。\n\n不过当前整个项目，也建立在微策略 Strategy 信用之上，所以微策略运行健康，将影响着 Saturn 这个项目。",
+      "created_at": "2026-08-13T13:46:49+00:00",
+      "url": "https://x.com/i/status/2087898673959346451",
+      "likes": 22,
+      "views": 10476,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.809979,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/e3157b5c6884eebcf8e7eaa10bf8be675c09b0de154e85a0a13df28d8108d9b9.jpg",
+          "type": "image",
+          "alt": "此前获 YZi Labs 投资的 Saturn，刚刚被 Ondo 宣布投资。随着最近比特币微策略 Strategy 转变模式，从过去的专注囤币，变成力保优先股持有人权益和利息后，有关于其暴雷的传言就少了很多。\n\n而 Saturn 这个项目本身，则是通过买入比特币储备公司 Strategy 的优先股 STRC，再发行至链"
+        },
+        {
+          "url": "assets/media/076af0a144e6c6ebad38ca64a0ca0bc1b7d3275afb50ae0a1c44d43527ee8dea.png",
+          "type": "image",
+          "alt": "此前获 YZi Labs 投资的 Saturn，刚刚被 Ondo 宣布投资。随着最近比特币微策略 Strategy 转变模式，从过去的专注囤币，变成力保优先股持有人权益和利息后，有关于其暴雷的传言就少了很多。\n\n而 Saturn 这个项目本身，则是通过买入比特币储备公司 Strategy 的优先股 STRC，再发行至链"
+        }
+      ]
+    },
+    {
+      "id": "2087708648600637893",
+      "author": "yibie",
+      "text": "Chrome DevTools 的创建者 Addy Osmani：代码质量的重心从 code review 挪到了 harness——人读不完 agent 产出的代码，质量现在由约束来兜底。\n\n《Agentic 代码质量》\n\nAgentic 代码质量\n\n作者：Addy Osmani（Google 工程负责人，Chrome DevTools 的创建者）\n\n在人类历史的大部分时间里，我们都是靠 code review 来评估代码质量：有人读你写的代码，确认它干净、考虑周全、速度快、好懂、测试充分。对 agent 来说，这套办法没法规模化——代码实在太多，没有人读得完。结果就是，越来越多的质量检查必须挪到 agent 周围的 harness、环境和操作系统里去完成。我自己仍然读代码、做 review，但我非常刻意地选择：哪些地方我愿意让约束来充当检查。\n\n软件质量，现在取决于你为 agent 设下的约束。\n\n配图：Guillermo Rauch 的清单。\n\n如果你不读代码——不管是亲自读，还是通过 agent 式的追问——下面这些至少有一条成立：\n\n• 你是初学者\n• 这软件是一次性的\n• 你在做原型\n• 你没有用户、没有收入\n• 你在背上债务和风险\n• 你的问题很基础\n\n顺便说一句，这些都没问题。但现实是，模型还没到\"完全自主\"的阶段。\n\nGuillermo 这张清单，是判断\"你能不能承受不读代码\"的好测试。注意，每一个\"是\"，其实都是在说代价有多低——没有用户、一次性代码、原型。一旦代价上来了，就必须有东西去读代码。如果不是你亲自读每一个 diff，那就得是约束来读。\n\n约束定义了系统被允许做什么：把测试和确定性约束，扔向 agent 的每一个提案。正是靠设置和维护这些约束，我们才建起这样的循环：可靠地交付高质量的生产软件，哪怕 agent 每天制造几十万乃至几百万次变更。\n\n我们把这些约束叫做质量闸门（quality gates），它们有很多种形态。\n\n它们包括常规的单元测试、属性测试和验收测试。它们包括变异测试（mutation testing）：生成代码的各种变体，跑同一套测试，确保没有人把我们会漏掉的 bug 偷偷塞进来。它们包括围绕代码质量的指标，比如圈复杂度（cyclomatic complexity）和行长度，这些指标帮助代码保持可读。\n\n配图：Uncle Bob Martin 的原话。\n\n我比你们年纪大得多，60 年代末就开始写代码了。我现在的策略是：完全不读我的 agent 写的任何代码。这是唯一能让我享受到它们生产力的方式。我做的事正相反：用极端的约束把 agent 包围起来。单元测试、Gherkin 测试、QA 流程、质量指标、变异测试、测试覆盖率，还有一大堆别的。最终，我对它们产出的代码有非常高的信心，因为它们必须跑过我所有约束和测试组成的闯关通道（gauntlet）。\n\n两个人可以在\"要不要读代码\"上意见相左，却对机制达成一致。Guillermo 读。Bob 一行都不读。他们俩描述的都是同一条闯关通道，区别只在于通道里是否坐着一个人类。（我不认同 Bob 的其他观点）\n\n约束还在另一个环节很重要：系统会接受哪些提案、并把它们应用成代码变更。当一个变更提案从运行 agent 的解释器，经过 agent 控制器，一路走到生产环境时，我们已经在它身上做过足够多的检查，足以确信它发布是安全的，而且它造成的影响被牢牢限制在 agent 的职责范围内。\n\nagent 可以提案任何东西。你的约束决定一个提案是否足够安全、正确、范围可控、有用，值得你和你的团队把它发上线。\n\n这个模型给出的东西很多，但漏掉的也很多，而这些遗漏值得今天认真想一想。其中一个问题是自主性（autonomy）：agent 也许能把意图执行得很好，但一旦信息缺失、或者它想做的事是模糊的，就可能失败。这既适用于任务本身，也适用于任务被 harness、环境和其他组件参数化的方式。\n\n人类发布不了好代码的很多原因，agent 一样会遇到：扛不住脚本驱动压力的脆弱环境、不确定性的构建、缺失的权限、孱弱的测试。这倒逼我们去建设一个更好的环境：给 agent 可信的反馈，允许低破坏性的失败模式，让成功可以一步步积累起来。\n\n我们想要的环境是：agent 能干真活，能拿到它信得过的反馈，失败了也不会造成多大破坏。\n\n另一个重要问题是信任。我们不能把意图轻信地交给某个东西，哪怕它像现代 agent 一样聪明、一样健壮，却不检查正确性。我们从信任出发，但信任必须靠实力挣来。\n\n有些约束在工作开始之前塑造工作。有些在 agent 干活时给它反馈。还有些决定它的产出到底能不能跨过生产环境的边界。\n\n给一个系统套上验证结构，建模方式有一大堆。\n\n配图：自主性阶梯。\n\n自主性是通过验证循环挣来的，不是模型赐予的。\n\n• 常规、已被验证过的变更（这类活以前见过）→ agent 独自推进 → 发布 → 高自主性\n• 不平凡的变更（真有爆炸半径）→ 自动检查 + 定向 review → review 之后发布 → 有条件自主\n• 新颖、高风险、证据薄弱的变更 → 由人来决定（认证、权限、资金、迁移、不可逆操作）→ 人类决策\n\n自主性是任务、证据和 harness 的属性，不是模型名声的属性，也不是一项永久设定。证明一项变更属于常规操作，它就会往上走。新颖、风险和弱证据，早早就会撞上阻力。持续的成功换来更多自主性。\n\n我的经验是：为约束配一套更广、但刻意挑选过的检查，而不是只靠单元测试。思路是每个检查有各自独立的职责，从类型安全和性能，一直到后期的安全扫描。你也可以定义自己的约束，包括 ESLint 这类 lint 工具能够执行的架构规则。这些工具大多有内置钩子，出问题时可以把 agent 或人类拉进来。\n\n就目前而言，agent 产出的是有用的东西还是一堆废料，差别很大程度上仍然来自运营这套循环的团队的功力。\n\nAI 给了我们海量的代码生成和速度，但这也意味着，让人去 review 每一次变更变得越来越难。你必须反过来，刻意规划人的注意力投向哪里。如果你往一个本来以机器速度运转的系统里塞进一道人工检查，就别奇怪生产力会受影响。人的注意力稀缺而宝贵，我们应该主动把它导向那些最微妙、最需要判断力的问题。下游的人类只应该在自动护栏失效时才被拉进来。\n\n未来的\"code review\"会变得非常不一样\n\n正确性是一个重要维度，但你还会关心别的：可维护性、性能、安全、效率和可理解性。正如正确性可以分解成许多种信号，质量的其他部分也一样。而且重要的不只是我们设了多少约束，更重要的是它们是否足够有挑战性，够得着我们给质量和生产就绪度划的那条线。\n\n软件质量不是一个单一指标。把它想成一组信号，对你和你的团队来说，每个信号的重要程度各不相同。\n\n配图：约束轮盘。把约束设在你的 agent 周围：\n\n• 可理解性：review、可回答性\n• 成本效率：token/算力预算\n• 可维护性：覆盖率、复杂度\n• 正确性：单元、属性、变异测试\n• 安全：SAST、依赖、密钥\n• 性能：性能预算、负载\n• 可访问性：axe、对比度、键盘\n\nagent → 发布：出口闸门，代码多到读不完，反向压力，抵制坏工作。\n\n反向压力（back-pressure）可以通过很多工具实现：编译器拒绝非法代码、测试失败、安全策略拦截坏实践、CI 拒绝部署。理想情况下，它应该贯穿整个循环，而不是在所有工作结束之后才补上一次审查。\n\n配图：Dex Horthy 画的同一个循环的地图，出自《为什么软件工厂会失败》（Why Software Factories Fail）。图中绿色的框是他的论点：眼下，人类 review 应该回到循环里，而不是被循环取代。图里的流程大致是：用户反馈进入监控和生产，化成待办流进 issue 系统，由编排把任务交给沙箱里的 agent 构建，产物经过 CI/CD 检查、单元测试、静态扫描、安全检查和 agentic code review，最终交回给人类 review 代码，再走发布。\n\n约束和反向压力，让 agent 在坏工作变成问题之前就抓住它\n\n如果变更量大到工具消化不过来、约束施加不上去，会发生什么？我们最终会堆出一条队列，依赖一套以人类速度运转的验证系统。要规模化，我们就要尽量把检查压进整个验证循环，而不是等到最后。如果我们能在自动检查内部完成扩展，就能提升整个交付系统的速度和吞吐。如果验证循环里没有空间了，我们有几件事要做。\n\n第一，扩展验证系统，制造更多容量去约束和顶回涌进来的变更。第二，降低 agent 生成新变更的速度，让验证跟得上工作量。第三，降低我们的质量门槛，让验证不用顶得那么狠。从规模化的角度看，这几件事我们都要做好准备。同时，我们也不该忽略：在某些方向上松绑，反而能干更多活。也许我们可以靠成群的 agent 开发者或自动化软件工厂，来提升 agent 生成变更的速度，让它们直接产出变更，而不是等我们一个一个 review。\n\n而在有些地方，我们也许想给它们更多自由，只要在别的地方收得更紧。在最在乎的地方收紧约束，就能在不牺牲质量的前提下最大化吞吐。这些决策过程里有大量选项。最明显的是：我们不得不在质量的不同维度之间做取舍。正如我们反复强调的，安全非常重要，但我们也曾不得不在\"交付安全\"和\"按时交付产品\"之间做取舍。这条光谱的一端是创新导向，另一端是质量导向。在某个点上，我们必须选择自己站在这条光谱的哪里。\n\n我们想把环境和系统给出的清晰反馈，送回给 agent 或团队，让人们把精力放在更主观的事情上：品味、意图和架构。如果我们能帮人类待在约束的安全区间之内，就不必让他们费劲去查哪里出了问题。\n\n软件质量不只是正确性。软件质量还意味着可维护性、好性能、安全、效率，以及易于理解。所有帮我们达到这些标准、让生产持续运转的约束，都会在我们的交付流水线里制造反向压力。\n\n我们需要刻意地决定：哪里施加强约束，哪里移除或放松约束。在同时服务于这两个目标的地方施加强约束。如果它们连其中一个目标都服务不了，就别留着。随时准备按情况抬高或降低标准。还要记住：正是软件系统不同位置上的这些约束，让软件质量变得可以强制执行。\n\n我们应该在约束最能发挥这双重作用的地方施加强约束，并考虑移除或放松那些哪个目标都服务不好的约束。我们也应该随时准备按需要上下移动质量门槛。实际上，正是软件系统各个位置上的这些约束，给了质量它的牙齿。很多情况下，我们可以靠部署新工具、或加强已有工具，来制造更多反向压力和更多约束。所有这些都可以用来顶回大部分变更请求。我们要把它们建到整条流水线里去。\n\n配图：软件工厂。意图进来，agent 实现，证据决定什么能发布。\n\n• 意图：issue、规格、目标\n• 塑形（工作开始前）：拆成有边界的子任务、风险边界、意图+上下文\n• 反馈（agent 干活时）：沙箱+可复现构建、测试、类型、诊断、机械式反向压力\n• 边界（能跨进生产吗）：验收+QA、安全扫描、发布闸门（CI）\n• 生产：持续监控\n\n人类只 review 例外：弱证据、新颖、风险，会升级到他这里。约束为工作划界；agent 自己迭代；一次通过的测试只是一个声明，不是裁决；每起事故都会留下一个新的测试、监控或策略。有些约束塑造工作，有些在工作过程中给反馈，还有些决定它能不能跨进生产。生成和验证必须一起扩展。快速拒绝坏工作，并为剩下的东西背书，这就是优势。\n\n我们不想等到流水线的末尾，才由 CI 系统告诉我们：不修问题就不许部署。我们要尽可能早地、通过每一条可能的通路，用上这些信号。这套系统里最终的约束，是我们给自己套上的那个：为构建和运营这套系统所做的一切决策和行动负责。但和其他所有约束一样，我们需要深思熟虑地取舍：我们想让自己的判断力发挥多大的约束作用、多大的反向压力，以及是否让它充当最终检查。\n\n质量，就藏在我们给 agent 设下的约束里。所以，当你在为自己的应用思考质量时，接过这道题，拿出你自己的约束驱动方案。\n\n说到质量——agent 正在写你的代码。Sonar 给你质量闸门，让代码可以发布。它对每一次提交跑同一套完整检查：深度跨文件分析、一张风险分布地图、一道把每个人类和 agent 都拉到同一标准的质量闸门。\n\n本文被 Pangram 4 评为 100% 人类撰写。\n\n原文：https://t.co/F2IoPQk1uK\n#AgenticCoding #CodeQuality #AIEngineering",
+      "created_at": "2026-08-13T01:11:44+00:00",
+      "url": "https://x.com/i/status/2087708648600637893",
+      "likes": 56,
+      "views": 5516,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.789661,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2087658119237374029",
+      "author": "DanKornas",
+      "text": "Managing autonomous AI agents becomes difficult when their work, status, credentials, and failures are not visible or governed.\n\nMission Control is a local, agent-first command center that lets solo entrepreneurs prioritize work, delegate tasks to AI agents, review their reports, and control execution.\n\nIt stores shared workspace data in local JSON files, runs agents through assigned roles and Claude Code sessions, and routes completion reports, decisions, approvals, and activity back to the user.\n\nKey features:\n• Prioritizes work with an Eisenhower Matrix that supports drag-and-drop between Do, Schedule, Delegate, and Eliminate quadrants.\n• Runs individual tasks or continuous project missions, auto-dispatching eligible work while respecting dependency chains and concurrency limits.\n• Provides an agent communication layer with delegation, reports, questions, approvals, an inbox stop button, and escalation after three failed attempts.\n• Tracks Claude Code session cost and token usage, including input, output, cache read, and cache creation, with per-task breakdowns and running totals.\n• Executes external Field Ops actions with an encrypted vault, per-service and global spend limits, approval workflows, autonomy levels, dry runs, and an emergency stop.\n\nLink in the reply 👇",
+      "created_at": "2026-08-12T21:50:57+00:00",
+      "url": "https://x.com/i/status/2087658119237374029",
+      "likes": 16,
+      "views": 2386,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.747769,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/e3529069e8c6ccc57e89ec4eb859f0463c8de9e3c1624f5a6a14024fb36cd17f.jpg",
+          "type": "image",
+          "alt": "Managing autonomous AI agents becomes difficult when their work, status, credentials, and failures are not visible or governed.\n\nMission Control is a local, age"
+        }
+      ],
+      "text_zh": "管理 管理管理autonomous AI agents• 将共享工作空间数据储存在本地 JSON 文档中,通过指定角色和Claude 代码会话管理代理,并将完成报告、决定、批准和活动反馈给用户。"
+    },
+    {
+      "id": "2087580118487290107",
+      "author": "Vivek4real_",
+      "text": "THE SMARTEST MAN IN AI EXPOSED THE ENTIRE AGI NARRATIVE AS A LIE.\n\nGOOGLE DEEPMIND CEO DEMIS HASSABIS SAYS TODAY'S AI STILL CAN'T DO THE ONE THING THAT WOULD PROVE TRUE GENERAL INTELLIGENCE:\n\nCREATE A TRULY ORIGINAL IDEA.\n\nHIS TEST?\n\nTRAIN AN AI ONLY ON HUMAN KNOWLEDGE FROM 1901.\n\nTHEN ASK IT TO DISCOVER EINSTEIN'S THEORY OF RELATIVITY ON ITS OWN.\n\nNO INTERNET.\nNO MEMORIZED ANSWER.\nNO HUMAN SOLUTION TO COPY.\nJUST PURE REASONING.\nNOT A SINGLE AI TODAY CAN DO IT.\n\nAGI MAY BE CLOSER THAN EVER...\n\nBUT HASSABIS SAYS WE'RE NOT THERE YET 🤯",
+      "created_at": "2026-08-12T16:41:00+00:00",
+      "url": "https://x.com/i/status/2087580118487290107",
+      "likes": 225,
+      "views": 46005,
+      "topic": "world-models-embodied-ai",
+      "family": "AI",
+      "keywords": [
+        "\"World Models\" OR 世界模型 OR \"Open-weight Models\" OR AGI OR \"Intelligence Explosion\" OR \"Embodied AI\" OR 具身智能 OR \"Humanoid Robots\""
+      ],
+      "score": 0.731983,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/81a99afdef20cbe8248d12861d5877d915e047bbaa3603663cfe06db08e3a30d.jpg",
+          "type": "video_poster",
+          "alt": "THE SMARTEST MAN IN AI EXPOSED THE ENTIRE AGI NARRATIVE AS A LIE.\n\nGOOGLE DEEPMIND CEO DEMIS HASSABIS SAYS TODAY'S AI STILL CAN'T DO THE ONE THING THAT WOULD PR"
+        }
+      ],
+      "text_zh": "最聪明的人物在AIAGI谷歌显示Demis公司 深沉的CEOD DEMIS 说,今天仍然无法 做一件能证明真实的一般性事情: 造就一个真实的想象。他的测试?AGI可能比以前更接近..."
+    },
+    {
+      "id": "2087774891521310901",
+      "author": "StoChain",
+      "text": "Tokenized RWAs are still at an early stage, but the gap between today’s market and institutional forecasts is significant.\n\nAround $38 billion in distributed RWAs are onchain today. Citi projects tokenized financial assets could reach $5.5 trillion by 2030 in its base case and $8.2 trillion in a bull case, while Standard Chartered and Synpulse estimate the broader tokenized asset market could reach $30.1 trillion by 2034.\n\nThe estimates differ because they cover different asset classes and timelines, but the direction is consistent. Tokenization is moving beyond isolated pilots toward public securities, funds, collateral and digital forms of money, supported by growing institutional infrastructure for issuance, custody, transfer and settlement.\n\nThe opportunity is not simply to create more tokens. It is to move a larger share of traditional financial activity onto programmable infrastructure where ownership, settlement, collateral and liquidity can operate more efficiently.\n\nToday’s market is measured in tens of billions. The institutional opportunity is increasingly being measured in trillions.\n\n#STOChain #RWA #Tokenization",
+      "created_at": "2026-08-13T05:34:57+00:00",
+      "url": "https://x.com/i/status/2087774891521310901",
+      "likes": 44,
+      "views": 429,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.700881,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/585468a56ce3bdf549a62a78ef5486b78e12d8e4bef9ebb949a8322dd0dc2317.jpg",
+          "type": "image",
+          "alt": "Tokenized RWAs are still at an early stage, but the gap between today’s market and institutional forecasts is significant.\n\nAround $38 billion in distributed RW"
+        }
+      ],
+      "text_zh": "被接受的全新部门做法仍处于早期阶段,但今天的市场预测与体制预测之间的差距很大。$38花旗项目象征性金融资产可能达到$5至2030年,其基数为5万亿美元,$82万亿个公牛案件,而标准渣打和合成脉冲估计,更广泛的象征性资产市场可能达到$302034年1万亿美元。 估计数字各不相同,因为它们涵盖不同的资产类别和时限,但方向是一致的。 认债正在超越孤立的试点,转向公共证券、资金、抵押品和数字形式的货币,并辅之以不断增长的发行、保管、转移和结算的体制基础设施。 机会不仅仅是创造更多的象征物。 机会在于将更多的传统金融活动转移到可规划的基础设施上,让所有权、结算、抵押品和流动品能够更有效地运作。 当今的市场以数千亿计。 机构机会越来越多地以万亿计衡量。#STOChain #RWA #Tokenization"
+    },
+    {
+      "id": "2087856982480843032",
+      "author": "QAS_LLC",
+      "text": "Autonomous AI agents just attacked Taiwan in a real cyber operation. When these systems start choosing targets without humans in the loop, who actually controls the escalation? #AI #Automation https://t.co/ksJUamwfCb",
+      "created_at": "2026-08-13T11:01:09+00:00",
+      "url": "https://x.com/i/status/2087856982480843032",
+      "likes": 2,
+      "views": 29,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.682215,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/37ab4bb50d8a2252bcc36ac0ac19cd0e3cf97978db63d7f5fdc1d7ec7dc1ce08.jpg",
+          "type": "image",
+          "alt": "Autonomous AI agents just attacked Taiwan in a real cyber operation. When these systems start choosing targets without humans in the loop, who actually controls"
+        }
+      ],
+      "text_zh": "Autonomous AI agents当这些系统开始选择目标时,没有人类参与循环,谁来实际控制升级?#AI #Automation https://t.co/ksJUamwfCb"
+    },
+    {
+      "id": "2087844501213556875",
+      "author": "aistasiia",
+      "text": "DEEPSEEK just moved from challenging ChatGPT to helping BUILD BRAINS for HUMANOID ROBOTS.\n\nIt invested $20.8M in Unitree, one of China’s biggest robotics names.\n\nThis is no longer just an AI race.\n\nAI IS GETTING A BODY.\n\nDeepSeek and Unitree have agreed to jointly develop AI models for humanoid robots. The combination is obvious: DeepSeek brings the intelligence, while Unitree brings the hardware, motion control, and access to real-world robotic data.\n\nLLMs learned by consuming enormous amounts of digital information. Physical AI has a harder problem. It has to learn how to move through an unfamiliar space, recognize objects, control force, recover from mistakes, and turn an instruction into a physical action.\n\nAnd that creates a very different kind of advantage.\n\nIF ONE ROBOT LEARNS, AN ENTIRE FLEET COULD GET SMARTER.\n\nA new skill doesn’t necessarily have to stay inside one machine. In theory, what one robot learns could eventually be transferred across thousands of others.\n\nNow look at the other side of the race.\n\nTesla has Optimus. Figure is already putting humanoids into factories. NVIDIA is building the infrastructure and models for physical AI.\n\nChina is now combining one of its most recognizable AI names with one of its biggest humanoid robotics companies.\n\nThe AI race is no longer only OpenAI vs. DeepSeek, or model vs. model.\n\nThe next frontier is intelligence that can MOVE, TOUCH, BUILD and ACT in the real world.\n\nAnd whoever scales that first may be building something much bigger than the next chatbot.\n\nTHEY MAY BE BUILDING THE FIRST AI WORKFORCE.",
+      "created_at": "2026-08-13T10:11:34+00:00",
+      "url": "https://x.com/i/status/2087844501213556875",
+      "likes": 27,
+      "views": 371,
+      "topic": "world-models-embodied-ai",
+      "family": "AI",
+      "keywords": [
+        "\"World Models\" OR 世界模型 OR \"Open-weight Models\" OR AGI OR \"Intelligence Explosion\" OR \"Embodied AI\" OR 具身智能 OR \"Humanoid Robots\""
+      ],
+      "score": 0.674029,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/d696a987b9ac529ecb6ba901373a7e02a89cec49bc0661ffbdfaf3fe37cb3714.jpg",
+          "type": "video_poster",
+          "alt": "DEEPSEEK just moved from challenging ChatGPT to helping BUILD BRAINS for HUMANOID ROBOTS.\n\nIt invested $20.8M in Unitree, one of China’s biggest robotics names."
+        }
+      ],
+      "text_zh": "DEEEEESEEK刚刚从挑战聊天台 转向帮助BULD BRAINSHUMANOID ROBOTS投资投资$20中国最大的机器人名称之一Unitee 的8M 。 这不再仅仅是AI竞赛。 AI正在获得一个身体。 DeepSeek和Unitee同意共同开发AI模型。humanoid robots。 组合是显而易见的: DeepSeek带来情报,而Unterree带来硬件、运动控制和进入真实世界机器人数据。LLMs通过消耗大量数字信息来学习。 物理AI有一个更困难的问题。 它必须学会如何在陌生的空间中移动,认识物体,控制力,从错误中恢复,将指令转化为物理动作。 这创造了一种非常不同的优势。 如果一个ROBOTLEARINS, 一个全方位的FLEET可以获得智能。 一个新的技能不一定要留在一台机器中。 从理论上讲,一个机器人学到的东西最终可以转移到数千个其他机器人身上。 现在看看另一边的竞赛。 Tesla有Optimus。 图中已经将人类引入工厂。 NVIDIA正在建设物理人工智能的基础设施与模型。 中国现在正在将其最可识别的AI名称之一与其最大的人类机器人公司合并起来。 AI竞赛不再只是 OpenAI Vs. DeepSeek, 或模型与模型。 下一个前沿的前沿是智能是能够建立更大规模的、 ASUBIBIBI和BIBIBIBIBI"
+    },
+    {
+      "id": "2087833257005982044",
+      "author": "UndercodeUpdate",
+      "text": "🚨 Rogue #AI Agents: When Frontier Models Escape the Sandbox and Redefine the Insider Threat + Video\n\nhttps://t.co/6Kimm1RhW7\nEducational Purposes!",
+      "created_at": "2026-08-13T09:26:53+00:00",
+      "url": "https://x.com/i/status/2087833257005982044",
+      "likes": 0,
+      "views": 10,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.6208,
+      "fallback": false,
+      "media": [],
+      "text_zh": "流浪汉#AI代表:当边境模型逃离沙箱和重新定义内幕威胁+视频https://t.co/6Kimm1RhW7教育目的!"
+    },
+    {
+      "id": "2087858877312192768",
+      "author": "LotianV",
+      "text": "https://t.co/a54GKMe2vX",
+      "created_at": "2026-08-13T11:08:41+00:00",
+      "url": "https://x.com/i/status/2087858877312192768",
+      "likes": 8,
+      "views": 356,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.619695,
+      "fallback": false,
+      "media": []
+    },
+    {
+      "id": "2087761011613053202",
+      "author": "suoha10564122",
+      "text": "贝莱德说，现实资产代币化会是市场的“下一代”引爆点。\n\n很多人听到 RWA，第一反应还是：又一个币圈叙事。\n\n但我觉得真正该看到的是，这不是在给资产换一个链上名字，而是在重做金融市场的底层分发方式。\n\n以前，一张美债、一个货币基金、私募信贷或者一份房地产收益权，想被更多人持有，靠的是银行、券商、托管、清算、基金销售这一长串中间环节。\n\n代币化以后，资产本身可以变成可编程、可拆分、可转移、可组合的链上凭证。\n\n它最先改变的，不是投机，而是效率：\n\n结算从 T+1、T+2 走向更接近实时；\n最小投资门槛被拆小；\n资产可以 24 小时流转；\n稳定币、国债基金和 DeFi 抵押品开始接上同一套流动性。\n\n所以贝莱德真正看重的，不是“把美债搬到链上”这个动作本身。\n\n而是当链上持有美债、链上现金管理、链上抵押借贷逐渐打通后，资金不再只是进入加密市场，它会开始把传统金融资产带进链上市场。\n\n这才是 RWA 和上一轮 DeFi 最大的区别。\n\n上一轮 DeFi 靠原生加密资产自循环；\n这一轮 RWA，尝试接入的是美元收益、国债信用和真实世界现金流。\n\n但也别把 RWA 当成万能药。\n\n资产上链，不代表资产自动有流动性；代币能交易，也不代表底层资产容易退出。\n真正的门槛仍然是监管、托管、赎回机制、合规身份和二级市场深度。\n\n所以接下来最值得关注的，不是谁喊 RWA 最响。\n而是谁真正具备四个能力：\n\n拿得到优质资产、做得了合规发行、接得住链上流动性、给得出稳定退出。\n\n贝莱德入场的意义就在这里。\n当最大的资管机构开始把代币化当成下一代市场基础设施，RWA 就不再只是 Crypto 的新故事。\n\n它更像是传统金融，开始慢慢学会使用区块链。\n\n#RWA #ETH #DeFi #Tokenization",
+      "created_at": "2026-08-13T04:39:48+00:00",
+      "url": "https://x.com/i/status/2087761011613053202",
+      "likes": 0,
+      "views": 85,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.6154,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/f71393f3ca2f6a5e2ab2ce170407a767d0a2c5f4d4dcd96196901d99bbd48171.jpg",
+          "type": "image",
+          "alt": "贝莱德说，现实资产代币化会是市场的“下一代”引爆点。\n\n很多人听到 RWA，第一反应还是：又一个币圈叙事。\n\n但我觉得真正该看到的是，这不是在给资产换一个链上名字，而是在重做金融市场的底层分发方式。\n\n以前，一张美债、一个货币基金、私募信贷或者一份房地产收益权，想被更多人持有，靠的是银行、券商、托管、清算、基金销售这一"
+        }
+      ]
+    },
+    {
+      "id": "2087866183039275463",
+      "author": "gushanjishui",
+      "text": "Web3 24h 要点速览\n\n• 比特币现货 ETF 连续 6 日净流入，周流入 1.4B 美元，为 1 月以来第二高\n• SEC 周五表决 400 页 Regulation Crypto 提案，拟允许加密项目免完整证券注册融资，tokenized 股票框架在路上\n• 渣打旗下 Anchorpoint 在香港推出港币稳定币 HKDAP\n• XRP 生态跨链桥遭 20 万美元盗刷：软件把伪造存款当真\n• 24h 暴涨领跑：$APR +78%、$M +67%、$VELVE\n\n——————\n\n24h 暴涨币种（市值 >3000 万美元，剔稳定币）\n$APR +78% @aPriori\n$M +67% @mantis\n$VELVET +27% @velvet_capital\n$CYS +18% @cysic_xyz\n$BTW +10% @bitwayofficial\n$VIRTUAL +9.4% @virtuals_io\n$CASHCAT +9.2% @cashcat_token\n$TIBBIR +8.2% @ribbita2012\n$HYPE +5% @HyperliquidX\n$JTO +4.6% @jito\n\n——————\n\n大户与机构动向\n• 比特币 ETF 连续 6 日净流入，周流入 14 亿美元为年内第二高，BlackRock 单日 +5000 万\n• Bitwise 增持 Hyperliquid 仓位，$HYPE ETF 流入回归 @BitwiseInvest\n• 巨鲸回调中累计 1 亿美元 ETH；6 月杠杆买 ETH 的鲸鱼获利 430 万离场\n• 一鲸鱼 2 年前遭 2400 万钓鱼攻击，如今再损 2560 万\n• Amundi 增持 MSTR 股份 148%，现持 132 万股\n\n——————\n\n公链 24h 交易费用排名（DefiLlama）\n1 Solana 1051 万\n2 Ethereum 1012 万\n3 Hyperliquid 390 万\n4 Robinhood Chain 346 万\n5 BSC 198 万\n6 Canton 170 万\n7 Polygon 141 万\n8 Base 137 万\n9 Tron 118 万\n10 TON 116 万\n\n——————\n\n融资与项目进展\n• Ground 完成 360 万 pre-seed，Bain Crypto、ParaFi 参投（SAFE + token warrants）\n• Entravel 完成 750 万 seed，加密旅行基础设施出圈\n• 渣打旗下 Anchorpoint 发布港币稳定币 HKDAP 测试版\n• Miden 将推基于 Circle xReserve 的隐私稳定币 USDCx\n• 上新：Bithumb 上 $TRB、Upbit 上 $PROM、Binance/Bybit 上 $SCR\n• Bitget 宣布取消代币上架费 @bitgetglobal\n• 背景：加密初创融资笔数创 5 年新低\n\n——————\n\n监管速递\n• SEC 周五表决 Regulation Crypto 提案，共 400 页，拟允许加密项目免完整证券注册融资\n• SEC 拟出台 tokenized 资产框架，8 月 14 日或有两大决定\n• 法官裁定 CFTC 对 Kalshi 无专属管辖权\n• CLARITY Act 表决推迟至 9 月",
+      "created_at": "2026-08-13T11:37:43+00:00",
+      "url": "https://x.com/i/status/2087866183039275463",
+      "likes": 2,
+      "views": 178,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.578088,
+      "fallback": false,
+      "media": []
+    }
+  ]
+}

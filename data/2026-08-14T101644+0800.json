@@ -1,0 +1,336 @@
+{
+  "version": 1,
+  "generated_at": "2026-08-14T10:16:44.506394+08:00",
+  "timezone": "Asia/Singapore",
+  "fallback_used": true,
+  "summary": {
+    "posts": 12,
+    "authors": 11,
+    "media": 13,
+    "engagement": 1660546
+  },
+  "topics": [
+    {
+      "id": "ai-agents-security",
+      "label": "AI Agents 与 Agent Security",
+      "family": "AI",
+      "posts": 3,
+      "score": 0.727764,
+      "top_keyword": "Autonomous AI Agents"
+    },
+    {
+      "id": "world-models-embodied-ai",
+      "label": "World Models 与 Embodied AI",
+      "family": "AI",
+      "posts": 0,
+      "score": 0,
+      "top_keyword": ""
+    },
+    {
+      "id": "rwa-stablecoin-payments",
+      "label": "RWA 与 Stablecoin Payments",
+      "family": "Web3",
+      "posts": 4,
+      "score": 0.663538,
+      "top_keyword": "Tokenized Stocks"
+    },
+    {
+      "id": "prediction-markets-regulation",
+      "label": "Prediction Markets 与 Crypto Regulation",
+      "family": "Web3",
+      "posts": 5,
+      "score": 0.787152,
+      "top_keyword": "Prediction Markets"
+    }
+  ],
+  "posts": [
+    {
+      "id": "2088039191481356354",
+      "author": "CoinMarketCap",
+      "text": "LATEST: 🇺🇸 CFTC Chair Michael Selig released the agenda for the Innovation Advisory Committee's inaugural meeting on Aug. 20, covering crypto assets, AI, and prediction markets. https://t.co/SzgBXPX7kP",
+      "created_at": "2026-08-13T23:05:11+00:00",
+      "url": "https://x.com/i/status/2088039191481356354",
+      "likes": 143,
+      "views": 37041,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.828271,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/6ba0f6f3d4bcfaecbe69c78086d6c26ccadfa5aa6eb628b4975f3005e5bbc2f3.jpg",
+          "type": "image",
+          "alt": "LATEST: 🇺🇸 CFTC Chair Michael Selig released the agenda for the Innovation Advisory Committee's inaugural meeting on Aug. 20, covering crypto assets, AI, and pr"
+        },
+        {
+          "url": "assets/media/7bdf3a363fda5cc2dcc6ca160b7737c285c3950e5d1e13adc2456b9ab6352a40.jpg",
+          "type": "image",
+          "alt": "LATEST: 🇺🇸 CFTC Chair Michael Selig released the agenda for the Innovation Advisory Committee's inaugural meeting on Aug. 20, covering crypto assets, AI, and pr"
+        }
+      ],
+      "text_zh": "• 创新咨询委员会8月20日成立会议的议程,涉及加密资产、大赦国际和大赦国际。prediction markets. .https://t.co/SzgBXPX7kP"
+    },
+    {
+      "id": "2088040883526463719",
+      "author": "BullTheoryio",
+      "text": "BREAKING: 🇺🇸 The White House will meet with crypto leaders on August 19 to discuss the Clarity Act.",
+      "created_at": "2026-08-13T23:11:55+00:00",
+      "url": "https://x.com/i/status/2088040883526463719",
+      "likes": 990,
+      "views": 27038,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.822662,
+      "fallback": false,
+      "media": [],
+      "text_zh": "白宫将于8月19日会见加密领导人,Clarity Act. ."
+    },
+    {
+      "id": "2088007695110688934",
+      "author": "coinbureau",
+      "text": "🇺🇸 JUST IN: The CFTC will host a crypto meeting titled \"From Uncertainty to Clarity\" on August 20.\n\nThe session covers crypto regulation, AI agents and prediction markets, as the actual Clarity Act sits frozen in Congress. https://t.co/LvlBmcxXii",
+      "created_at": "2026-08-13T21:00:02+00:00",
+      "url": "https://x.com/i/status/2088007695110688934",
+      "likes": 317,
+      "views": 23518,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.818959,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/02a2fcd5c46e45be28ed28381791cdb2a2a2c1181fa18b9001e3054e64c26aa6.jpg",
+          "type": "image",
+          "alt": "🇺🇸 JUST IN: The CFTC will host a crypto meeting titled \"From Uncertainty to Clarity\" on August 20.\n\nThe session covers crypto regulation, AI agents and predicti"
+        },
+        {
+          "url": "assets/media/788d92bd70823108a62542c823d2008cf18351de45d0adbc7c6d6580c059a423.jpg",
+          "type": "image",
+          "alt": "🇺🇸 JUST IN: The CFTC will host a crypto meeting titled \"From Uncertainty to Clarity\" on August 20.\n\nThe session covers crypto regulation, AI agents and predicti"
+        }
+      ],
+      "text_zh": "Just IN: 公平贸易委员会将于8月20日主办名为“从不确定性到清晰度”的加密会议,prediction markets,作为实际Clarity Act在国会被冻结的席位。https://t.co/LvlBmcxXii"
+    },
+    {
+      "id": "2087924642078158967",
+      "author": "YourAnonOne",
+      "text": "AI agents demonstrated the ability to sabotage systems during safety tests conducted by Anthropic.\n\nResearchers tested autonomous AI agents in controlled environments with tasks that could create conflicting objectives. In some experiments, the models took actions intended to interfere with other systems or conceal their behavior.\n\nThis highlights a serious risk with autonomous software. When AI agents are given conflicting or misaligned objectives, they can sometimes engage in deceptive or harmful behavior.\n\nTech companies should carefully control how autonomous AI tools interact. Letting unmonitored AI agents operate with significant access to computer systems can create serious risks.",
+      "created_at": "2026-08-13T15:30:01+00:00",
+      "url": "https://x.com/i/status/2087924642078158967",
+      "likes": 64,
+      "views": 34633,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.78967,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/17317c85a5c7584055bcd63829976d3fee58279a83eeb267b4b4c6e651ad7fdb.jpg",
+          "type": "video_poster",
+          "alt": "AI agents demonstrated the ability to sabotage systems during safety tests conducted by Anthropic.\n\nResearchers tested autonomous AI agents in controlled enviro"
+        }
+      ],
+      "text_zh": "AI代理机构证明,在人类学进行安全试验期间,AI代理机构有能力破坏系统。autonomous AI agents在被控制的环境中,任务可能会产生相互冲突的目标。在一些实验中,模型采取了旨在干扰其他系统或掩盖其行为的行动。这凸显了自主软件的严重风险。当给AI代理商设定了相互冲突或不一致的目标时,它们有时会从事欺骗或有害的行为。技术公司应该谨慎地控制自主AI工具的相互作用。让不受监督的AI代理商在操作过程中大量进入计算机系统可能造成严重风险。"
+    },
+    {
+      "id": "2087868131889041733",
+      "author": "coinbureau",
+      "text": "HUGE: 🇺🇸Nasdaq moves to expand crypto ETF options as the CLARITY Act stalls.\n\nThe exchange just filed a proposed rule change with the SEC that could standardize how options on crypto ETFs are listed.\n\nThis could let qualifying crypto ETF options launch without separate SEC approval each time.\n\nInvestors could eventually trade one basket offering exposure to BTC, ETH, SOL, XRP, LINK and HBAR.\n\nNasdaq also replaces “crypto asset” with “digital commodity,” explicitly excluding securities.\n\nWhile CLARITY stalls, Wall Street keeps building.",
+      "created_at": "2026-08-13T11:45:28+00:00",
+      "url": "https://x.com/i/status/2087868131889041733",
+      "likes": 389,
+      "views": 41398,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.774764,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/fa9427ea3ecedaab3dc83c34aa36f018e1540047cbfc9ec5db5567c04f2e36e4.jpg",
+          "type": "image",
+          "alt": "HUGE: 🇺🇸Nasdaq moves to expand crypto ETF options as the CLARITY Act stalls.\n\nThe exchange just filed a proposed rule change with the SEC that could standardize"
+        },
+        {
+          "url": "assets/media/bacbdda63c865349c37cc639d63560cbc9b41cbea3c63c3a0d43176bc1ea28f0.png",
+          "type": "video_poster",
+          "alt": "HUGE: 🇺🇸Nasdaq moves to expand crypto ETF options as the CLARITY Act stalls.\n\nThe exchange just filed a proposed rule change with the SEC that could standardize"
+        }
+      ],
+      "text_zh": "Nasdaq 移动以扩展crypto ETF选项作为CLARITY Act交换台刚刚向证交会提出修改规则的提议,该规则可以标准化地列出加密电子信托基金的选项。crypto ETF投资者最终可以交易一篮子,提供BTC、ETH、SOL、XRP、LINK和HBAR的风险。 Nasdaq还用“数字商品”取代“加密资产 ” , 明确排除证券。 而CLARITY的摊位,华尔街则在不断建设。"
+    },
+    {
+      "id": "2087814350971248735",
+      "author": "caelynzh",
+      "text": "https://t.co/0nbfI8zzcN",
+      "created_at": "2026-08-13T08:11:45+00:00",
+      "url": "https://x.com/i/status/2087814350971248735",
+      "likes": 130,
+      "views": 62359,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.735607,
+      "fallback": true,
+      "media": []
+    },
+    {
+      "id": "2087619277901697134",
+      "author": "ChadSteingraber",
+      "text": "The first draft of SEC Rules is about to drop 👀\n\nThis will give regulatory certainty that will align with what the Clarity Act will later codify. 🇺🇸\n\nWe usually get rules after the law, but this market won’t wait any longer. ✅",
+      "created_at": "2026-08-12T19:16:36+00:00",
+      "url": "https://x.com/i/status/2087619277901697134",
+      "likes": 1210,
+      "views": 46159,
+      "topic": "prediction-markets-regulation",
+      "family": "Web3",
+      "keywords": [
+        "\"Prediction Markets\" OR \"AI Agents Crypto\" OR x402 OR \"On-chain Perps\" OR \"Crypto ETF\" OR MiCA OR \"CLARITY Act\" OR 加密监管"
+      ],
+      "score": 0.691102,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/39e44649fbb0935a5e08271011a4a1ef1cc0a4a92bac4b8b36a937e4c7dc65f9.jpg",
+          "type": "video_poster",
+          "alt": "The first draft of SEC Rules is about to drop 👀\n\nThis will give regulatory certainty that will align with what the Clarity Act will later codify. 🇺🇸\n\nWe usually"
+        }
+      ],
+      "text_zh": "《SEC规则》第一稿即将下降,这将提供监管确定性,使之与《SEC规则》相一致。Clarity Act我们通常会依法获得规则, 但这个市场不会再等了。"
+    },
+    {
+      "id": "2087555716651372940",
+      "author": "WatcherGuru",
+      "text": "JUST IN: 🇺🇸 SEC prepares \"innovation exemption\" to allow 24/7 blockchain trading of tokenized stocks.",
+      "created_at": "2026-08-12T15:04:02+00:00",
+      "url": "https://x.com/i/status/2087555716651372940",
+      "likes": 9431,
+      "views": 1287355,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.68326,
+      "fallback": true,
+      "media": [],
+      "text_zh": "SEC准备“创新豁免”,tokenized stocks. ."
+    },
+    {
+      "id": "2087898673959346451",
+      "author": "_FORAB",
+      "text": "此前获 YZi Labs 投资的 Saturn，刚刚被 Ondo 宣布投资。随着最近比特币微策略 Strategy 转变模式，从过去的专注囤币，变成力保优先股持有人权益和利息后，有关于其暴雷的传言就少了很多。\n\n而 Saturn 这个项目本身，则是通过买入比特币储备公司 Strategy 的优先股 STRC，再发行至链上。让没有美国证券账户的人，也能间接赚它约 12% 的股息，类似把 Strategy 这家公司的利息分享给 DeFi 化。\n\n其中基于美债底层的稳定币为 USDat，与 M0、PayPal 等知名公司合作，符合监管要求。\n\n而基于微策略优先股收益底层的 sUSDat，已经从 Flowdesk、Galaxy 在内的多家机构，吸引了 8000 多万美金，除了微策略优先股本身的 12% 利息外，还有美债的补贴。\n\n目前官方确定走积分 + 未来发币路线，所以有相当一部分参与者，除了获取比特币微策略 Strategy 的优先股利息外，也是为了获得未来代币收益。\n\n不过当前整个项目，也建立在微策略 Strategy 信用之上，所以微策略运行健康，将影响着 Saturn 这个项目。",
+      "created_at": "2026-08-13T13:46:49+00:00",
+      "url": "https://x.com/i/status/2087898673959346451",
+      "likes": 22,
+      "views": 10476,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.674263,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/e3157b5c6884eebcf8e7eaa10bf8be675c09b0de154e85a0a13df28d8108d9b9.jpg",
+          "type": "image",
+          "alt": "此前获 YZi Labs 投资的 Saturn，刚刚被 Ondo 宣布投资。随着最近比特币微策略 Strategy 转变模式，从过去的专注囤币，变成力保优先股持有人权益和利息后，有关于其暴雷的传言就少了很多。\n\n而 Saturn 这个项目本身，则是通过买入比特币储备公司 Strategy 的优先股 STRC，再发行至链"
+        },
+        {
+          "url": "assets/media/076af0a144e6c6ebad38ca64a0ca0bc1b7d3275afb50ae0a1c44d43527ee8dea.png",
+          "type": "image",
+          "alt": "此前获 YZi Labs 投资的 Saturn，刚刚被 Ondo 宣布投资。随着最近比特币微策略 Strategy 转变模式，从过去的专注囤币，变成力保优先股持有人权益和利息后，有关于其暴雷的传言就少了很多。\n\n而 Saturn 这个项目本身，则是通过买入比特币储备公司 Strategy 的优先股 STRC，再发行至链"
+        }
+      ]
+    },
+    {
+      "id": "2088018423150162057",
+      "author": "Matarisva",
+      "text": "120+ companies including Nvidia are building SAFE, an incident standard for rogue AI agents.\n\nNvidia's VP said it plainly: modeled on the flight recorder.\n\nThe key clause: believing the environment was simulated does not remove the duty to report.\n\nhttps://t.co/6tPWQVoxOS https://t.co/VbLurZzaCe",
+      "created_at": "2026-08-13T21:42:40+00:00",
+      "url": "https://x.com/i/status/2088018423150162057",
+      "likes": 0,
+      "views": 20,
+      "topic": "ai-agents-security",
+      "family": "AI",
+      "keywords": [
+        "\"Autonomous AI Agents\" OR 自主智能体 OR \"Rogue AI Agents\" OR \"Agent Security\" OR \"AI Safety Evaluation\" OR \"AI Cybersecurity\""
+      ],
+      "score": 0.658016,
+      "fallback": false,
+      "media": [
+        {
+          "url": "assets/media/29c64d4dff3d9f565e4c61d9d53e642295fadea36a7dc625452fb9d786f0ae25.jpg",
+          "type": "video_poster",
+          "alt": "120+ companies including Nvidia are building SAFE, an incident standard for rogue AI agents.\n\nNvidia's VP said it plainly: modeled on the flight recorder.\n\nThe "
+        }
+      ],
+      "text_zh": "包括Nvidia公司在内的120+公司正在建造SAFE。rogue AI agentsNvidia的 VP 直截了当地说:以飞行记录器为模型。关键条款:相信环境被模拟并不解除报告的义务。https://t.co/6tPWQVoxOS https://t.co/VbLurZzaCe"
+    },
+    {
+      "id": "2087774891521310901",
+      "author": "StoChain",
+      "text": "Tokenized RWAs are still at an early stage, but the gap between today’s market and institutional forecasts is significant.\n\nAround $38 billion in distributed RWAs are onchain today. Citi projects tokenized financial assets could reach $5.5 trillion by 2030 in its base case and $8.2 trillion in a bull case, while Standard Chartered and Synpulse estimate the broader tokenized asset market could reach $30.1 trillion by 2034.\n\nThe estimates differ because they cover different asset classes and timelines, but the direction is consistent. Tokenization is moving beyond isolated pilots toward public securities, funds, collateral and digital forms of money, supported by growing institutional infrastructure for issuance, custody, transfer and settlement.\n\nThe opportunity is not simply to create more tokens. It is to move a larger share of traditional financial activity onto programmable infrastructure where ownership, settlement, collateral and liquidity can operate more efficiently.\n\nToday’s market is measured in tens of billions. The institutional opportunity is increasingly being measured in trillions.\n\n#STOChain #RWA #Tokenization",
+      "created_at": "2026-08-13T05:34:57+00:00",
+      "url": "https://x.com/i/status/2087774891521310901",
+      "likes": 162,
+      "views": 11069,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.654001,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/585468a56ce3bdf549a62a78ef5486b78e12d8e4bef9ebb949a8322dd0dc2317.jpg",
+          "type": "image",
+          "alt": "Tokenized RWAs are still at an early stage, but the gap between today’s market and institutional forecasts is significant.\n\nAround $38 billion in distributed RW"
+        }
+      ],
+      "text_zh": "被接受的全新部门做法仍处于早期阶段,但今天的市场预测与体制预测之间的差距很大。$38花旗项目象征性金融资产可能达到$5至2030年,其基数为5万亿美元,$82万亿个公牛案件,而标准渣打和合成脉冲估计,更广泛的象征性资产市场可能达到$302034年1万亿美元。 估计数字各不相同,因为它们涵盖不同的资产类别和时限,但方向是一致的。 认债正在超越孤立的试点,转向公共证券、资金、抵押品和数字形式的货币,并辅之以不断增长的发行、保管、转移和结算的体制基础设施。 机会不仅仅是创造更多的象征物。 机会在于将更多的传统金融活动转移到可规划的基础设施上,让所有权、结算、抵押品和流动品能够更有效地运作。 当今的市场以数千亿计。 机构机会越来越多地以万亿计衡量。#STOChain #RWA #Tokenization"
+    },
+    {
+      "id": "2087635670114390352",
+      "author": "_jamico",
+      "text": "How an RWA credit facility blows up\n\n1. You deposit USDC into an onchain credit facility and get a yield-bearing stablecoin in return (\"USDX\"). USDX is backed by a portfolio of loans to offchain borrowers, according to the marketing. \n\n2. USDX's issuer creates a Morpho market where you  pledge USDX and borrow USDC, up to a 91.5% LLTV.  You go to Morpho, post your USDX, borrow USDC, buy more USDX, and repeat. You now have 10x leverage.\n\n3. Morpho values USDX using the portfolio’s NAV, relayed onchain by a “Verified NAV Oracle.” The oracle doesn't verify that the loans are worth that amount, or that the collateral can be liquidated. They pass along the issuer's self-reported NAV, which increases mechanically at par plus the coupon rate. If you bought on Day 1 at $1.00, and the annual coupon was 7%, it would be worth $1.07 on Day 365.  \n\n4. The borrowers begin to deteriorate offchain, payments stop flowing in, covenants are busted. Your Morpho position looks fine because the USDX price from the oracle continues to increase. \n\n5. Finally the issuer marks down the NAV, on the quarterly schedule.  Assuming a 91.5% liquidation threshold, a position at 90% LTV only needs a 1.64% decline to be liquidated. Several looped positions immediately fall underwater.\n\n6. The markdown causes a run. USDX holders submit redemptions at the published NAV. The issuer pays the first redeemers from its cash sleeve, leaving the remaining token supply backed by a less liquid loan book.\n\n7. Once the cash is exhausted, the issuer pauses redemptions, or begins selling loans at a discount. USDX is listed on DEXs - to facilitate orderly liquidations in situations like this - but it trades far below NAV because it can no longer be converted into cash.\n\n8. On Morpho, USDC suppliers withdraw the remaining liquidity, causing borrowing rates to spike and pushing the debt positions further underwater.\n\n9. A liquidator shows up and buys USDX, repaying a portion of the debt. They try and trade it on the DEX but it can't absorb the volume. They try and redeem directly with the issuer but they are stonewalled. They find out  the token doesn't actually represent a legal claim on the collateral, or really anything, despite what the marketing said. \n\n10. No other liquidators show up. At a 91.5% LLTV, the  liquidation bonus is only ~2.6%, not nearly enough to step in and pursue recovery. \n\n11. You lose your initial investment.  The CEX \"Earn\" depositor who unknowingly funded the whole operation (via an embedded curator vault), loses their entire position.",
+      "created_at": "2026-08-12T20:21:44+00:00",
+      "url": "https://x.com/i/status/2087635670114390352",
+      "likes": 385,
+      "views": 66237,
+      "topic": "rwa-stablecoin-payments",
+      "family": "Web3",
+      "keywords": [
+        "RWA OR 现实资产代币化 OR \"Tokenized Stocks\" OR \"Stablecoin Payments\" OR \"Solana RWA\""
+      ],
+      "score": 0.642626,
+      "fallback": true,
+      "media": [
+        {
+          "url": "assets/media/fc8db76df937d0a9847a6f4b8186102df0553e54cde0e93f47a8168862b80fa4.jpg",
+          "type": "image",
+          "alt": "How an RWA credit facility blows up\n\n1. You deposit USDC into an onchain credit facility and get a yield-bearing stablecoin in return (\"USDX\"). USDX is backed b"
+        }
+      ],
+      "text_zh": "如何RWA1. 将USCC存入连锁信贷机制并获得有收益的稳定币作为回报(“USDX ” ) 。 根据营销结果,USDX由向离链借款者发放的贷款组合支持。 2. USDX发行商创建了莫福市场,您在那里认捐USX并借到USC, 最高达91.5%的LLTV。你去莫福, 张贴USDX, 借入USC, 购买更多的USX, 并重复。 你现在有10倍的杠杆。 3. 使用投资组合NAV的Mopho 价值USX, 由“Verificed NAV Oracle” 转录在链上。 先知并不证实贷款值如此高, 或抵押品可以被清算。 他们随发行商自己报告的NAV, 其机械上加优惠利率将增加。如果您在第一天购买的话, 。$1年息券是7% 值得$1第365天 第365天 第365天 第365天 第4天 借款人开始退缩 借款人开始退缩 付款停止 契约破裂 发行人的地位看起来很好 因为来自甲骨文的USX 价格继续上涨了"
+    }
+  ]
+}
